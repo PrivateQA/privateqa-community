@@ -1,0 +1,64 @@
+{
+  "title": "Scenario: A - Ouvrir https://gulafront.vercel.app;",
+  "file": "C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\tests\\generated\\scenario.spec.ts",
+  "project": "",
+  "status": "failed",
+  "durationMs": 16089,
+  "error": {
+    "message": "TimeoutError: locator.click: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('button:visible').filter({ hasText: 'Donnée d\\'exemple' }).or(locator('a:visible').filter({ hasText: 'Donnée d\\'exemple' })).or(locator('text=Donnée d\\'exemple:visible'))\u001b[22m\n",
+    "stack": "TimeoutError: locator.click: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('button:visible').filter({ hasText: 'Donnée d\\'exemple' }).or(locator('a:visible').filter({ hasText: 'Donnée d\\'exemple' })).or(locator('text=Donnée d\\'exemple:visible'))\u001b[22m\n\n    at fn (C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\tests\\generated\\scenario.spec.ts:10:16)\n    at C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\tests\\_fwkTest\\base.ts:177:13\n    at fwkStep (C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\tests\\_fwkTest\\base.ts:175:14)\n    at C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\tests\\generated\\scenario.spec.ts:8:9"
+  },
+  "screenshot": "test-output\\screenshots\\failed\\scenario-a-ouvrir-https-gulafront-vercel-app.png",
+  "steps": {
+    "total": 2,
+    "passed": 1,
+    "failed": 1,
+    "details": [
+      {
+        "index": 1,
+        "label": "Ouvrir https://gulafront.vercel.app",
+        "status": "passed",
+        "durationMs": 274,
+        "screenshot": "test-output\\screenshots\\success\\scenario-a-ouvrir-https-gulafront-vercel-app-step-01.png"
+      },
+      {
+        "index": 2,
+        "label": "Clique sur \"Donnée d'exemple\"",
+        "status": "failed",
+        "durationMs": 15017,
+        "screenshot": "test-output\\screenshots\\failed\\scenario-a-ouvrir-https-gulafront-vercel-app-step-02.png",
+        "error": {
+          "message": "locator.click: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('button:visible').filter({ hasText: 'Donnée d\\'exemple' }).or(locator('a:visible').filter({ hasText: 'Donnée d\\'exemple' })).or(locator('text=Donnée d\\'exemple:visible'))\u001b[22m\n",
+          "stack": "locator.click: Timeout 15000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('button:visible').filter({ hasText: 'Donnée d\\'exemple' }).or(locator('a:visible').filter({ hasText: 'Donnée d\\'exemple' })).or(locator('text=Donnée d\\'exemple:visible'))\u001b[22m\n\n    at fn (C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\tests\\generated\\scenario.spec.ts:10:16)\n    at C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\tests\\_fwkTest\\base.ts:177:13\n    at fwkStep (C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\tests\\_fwkTest\\base.ts:175:14)\n    at C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\tests\\generated\\scenario.spec.ts:8:9"
+        }
+      }
+    ]
+  },
+  "logs": {
+    "console": [],
+    "pageErrors": [],
+    "requestFailed": []
+  },
+  "attachments": [
+    {
+      "name": "step-1",
+      "contentType": "image/png",
+      "path": "C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\test-output\\.playwright\\scenario-Scenario-A---Ouvrir-https-gulafront-vercel-app-\\attachments\\step-1-38ab9cdef0399b75a3070f5c1924dd578212e257.png"
+    },
+    {
+      "name": "step-2",
+      "contentType": "image/png",
+      "path": "C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\test-output\\.playwright\\scenario-Scenario-A---Ouvrir-https-gulafront-vercel-app-\\attachments\\step-2-4e99fd533885d9ea538c4a644da5cc7fa3dcbb4e.png"
+    },
+    {
+      "name": "step-2-error",
+      "contentType": "text/plain"
+    },
+    {
+      "name": "screenshot",
+      "contentType": "image/png",
+      "path": "C:\\Users\\Alexis\\Documents\\dev\\fwkTest\\test-output\\.playwright\\scenario-Scenario-A---Ouvrir-https-gulafront-vercel-app-\\attachments\\screenshot-2853dd6b6e5db567b954b0ba90a830be62349d95.png"
+    }
+  ],
+  "endedAt": "2026-02-10T22:25:28.139Z"
+}
