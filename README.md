@@ -1,39 +1,21 @@
 # privateqa
 
-Write end-to-end tests in natural language, run them with Playwright.
+Write end-to-end tests in plain language, run them with Playwright — zero config.
 
-privateqa translates human-readable scenarios (plain text / Markdown) into fully executable Playwright test specs — no step definitions, no Gherkin boilerplate.
+## Install
 
-## Features
+```bash
+npm install privateqa-community
+```
 
-- **Natural-language scenarios** — Describe test steps in French or English, privateqa parses and compiles them to Playwright TypeScript.
-- **DOM mapping** — Crawl a page to build a map of interactive elements with optional embeddings for smart locator matching.
-- **Smart locator resolution** — Matches scenario intent to real DOM elements using cosine similarity (embeddings) or Jaccard text matching.
-- **Plugin system** — Extend the test runtime with plugins (error interception, retry logic, custom hooks).
-- **Detailed reporting** — Per-step screenshots, JSON logs, HTML reports, and run-over-run evolution charts.
-- **CLI + REST API** — Use from the terminal or integrate via HTTP.
+That's it. Playwright and Chromium are installed automatically.
 
 ## Quick start
 
-```bash
-npm install privateqa-community @playwright/test
-npx playwright install
-```
-
-### 1. Map your application
-
-```bash
-npx privateqa map https://your-app.example.com
-```
-
-This crawls the page and creates `.privateqa/map.json` with all interactive elements.
-
-### 2. Write a scenario
-
-Create a Markdown file (e.g. `scenario.md`):
+**1. Write a scenario** (`scenario.md`):
 
 ```markdown
-# My first test
+# Login test
 
 - Ouvrir "https://your-app.example.com"
 - Clique sur "Login"
@@ -43,37 +25,61 @@ Create a Markdown file (e.g. `scenario.md`):
 - Vérifie que "Welcome" est visible
 ```
 
-See [SYNTAX.md](./SYNTAX.md) for the full formalism reference.
-
-### 3. Compile to Playwright
+**2. Run it:**
 
 ```bash
-npx privateqa compile scenario.md
+npx privateqa run scenario.md
 ```
 
-This generates a `.spec.ts` file in `tests/generated/`.
+Done. privateqa maps the page, compiles the scenario to a Playwright spec, and executes the test — all in one command.
 
-### 4. Run
+### Options
 
 ```bash
-npx playwright test
+npx privateqa run scenario.md --headed        # see the browser
+npx privateqa run scenario.md --url <url>     # override the URL
+npx privateqa run scenario.md --no-map        # reuse existing DOM map
+```
+
+## Scenario syntax
+
+See [SYNTAX.md](./SYNTAX.md) for the full reference. Quick summary:
+
+| Step | Example |
+|------|---------|
+| Navigate | `Ouvrir "https://example.com"` |
+| Click | `Clique sur "Login"` |
+| Fill | `Remplis "Email" avec "user@test.com"` |
+| Select | `Sélectionne "France" dans "Country"` |
+| Assert | `Vérifie que "Welcome" est visible` |
+| Scroll | `Scroll jusqu'à "Footer"` |
+| Wait | `J'attends 2s` |
+
+## Advanced: step-by-step commands
+
+For more control, you can run each stage separately:
+
+```bash
+npx privateqa map https://your-app.com          # 1. Map the DOM
+npx privateqa compile scenario.md                # 2. Generate .spec.ts
+npx privateqa run                                # 3. Run all generated tests
 ```
 
 ## CLI reference
 
 | Command | Description |
 |---------|-------------|
+| `privateqa run <scenario.md>` | **All-in-one**: map + compile + execute |
+| `privateqa run` | Execute already-generated tests |
 | `privateqa map <url>` | Crawl a URL and build a DOM map |
-| `privateqa preprocess <scenario.md>` | Normalize steps with optional AI assistance |
 | `privateqa compile <scenario.md>` | Generate Playwright spec(s) from a scenario |
-| `privateqa run [--headed]` | Run generated tests via Playwright |
 | `privateqa report` | Generate an HTML report from the last run |
 | `privateqa evolution` | Generate an evolution chart across runs |
 | `privateqa api` | Start the REST API server |
 
 ## Plugin system
 
-privateqa exposes a plugin API to intercept step failures, add retry logic, or hook into test lifecycle events.
+Extend privateqa with plugins to intercept step failures, add retry logic, or hook into the test lifecycle:
 
 ```typescript
 import { registerPlugin } from "privateqa-community";
@@ -90,8 +96,6 @@ const myPlugin: QAPlugin = {
 registerPlugin(myPlugin);
 ```
 
-### Plugin hooks
-
 | Hook | When |
 |------|------|
 | `onStepFailure(ctx)` | A test step throws — return `retry`, `skip`, or `fail` |
@@ -103,9 +107,9 @@ registerPlugin(myPlugin);
 | Import path | Contents |
 |-------------|----------|
 | `privateqa-community` | Plugin API, step types, builder, store |
-| `privateqa-community/base` | Playwright test fixtures (`test`, `expect`, `qaStep`) |
-| `privateqa-community/plugin` | Plugin types and registry only |
-| `privateqa-community/errors` | Error detection and enrichment utilities |
+| `privateqa-community/base` | Playwright fixtures (`test`, `expect`, `qaStep`) |
+| `privateqa-community/plugin` | Plugin types and registry |
+| `privateqa-community/errors` | Error detection and enrichment |
 
 ## Environment variables
 
@@ -115,7 +119,6 @@ registerPlugin(myPlugin);
 | `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model |
 | `OLLAMA_GEN_MODEL` | `mistral` | Generation model |
 | `HEADLESS` | `true` | Run browser headless |
-| `TEST_OUTPUT_DIR` | `test-output` | Output directory for reports |
 | `PRIVATEQA_MAX_RETRIES` | `1` | Max plugin retry attempts per step |
 
 ## License

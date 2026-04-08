@@ -5,12 +5,12 @@ test("Scenario: A - Ouvrir https://gulafront.vercel.app;", async ({ page }, test
   await qaStep(testInfo, page, 1, "Ouvrir https://gulafront.vercel.app", async () => {
     await page.goto("https://gulafront.vercel.app");
   });
-  await qaStep(testInfo, page, 2, "Clique sur \"Donnée d'exemple\"", async () => {
-    const _el2 = page.locator("button:visible", { hasText: "Donnée d'exemple" }).or(page.locator("a:visible", { hasText: "Donnée d'exemple" })).or(page.locator("text=" + "Donnée d'exemple" + ":visible"));
+  await qaStep(testInfo, page, 2, "Clique sur \"Données d'exemplee\"", async () => {
+    const _el2 = page.locator("button:visible", { hasText: "Données d'exemplee" }).or(page.locator("a:visible", { hasText: "Données d'exemplee" })).or(page.locator("text=" + "Données d'exemplee" + ":visible"));
     await _el2.click({ timeout: 15000 });
   });
   await qaStep(testInfo, page, 3, "Vérifier que le texte \"Résultats de l'analyse\" est visible", async () => {
-    await expect(page.locator("*:visible", { hasText: /Résultats\s+de\s+l['']analyse/ }).first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator("*:visible", { hasText: /Résultats\s+de\s+l['’]analyse/ }).first()).toBeVisible({ timeout: 15000 });
   });
   await qaStep(testInfo, page, 4, "Clique sur \"Voir plus\" (première occurence)", async () => {
     const _el4 = page.locator("button:visible", { hasText: "Voir plus" }).or(page.locator("a:visible", { hasText: "Voir plus" })).or(page.locator("text=" + "Voir plus" + ":visible")).nth(0);

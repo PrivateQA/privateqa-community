@@ -1,6 +1,6 @@
 {
   "name": "privateqa-community",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "description": "Write tests in natural language, run them with Playwright. Plugin-extensible.",
   "license": "MIT",
@@ -9,30 +9,37 @@
   },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "default": "./dist/index.js"
     },
     "./plugin": {
+      "types": "./dist/core/plugin.d.ts",
       "import": "./dist/core/plugin.js",
-      "types": "./dist/core/plugin.d.ts"
+      "default": "./dist/core/plugin.js"
     },
     "./errors": {
+      "types": "./dist/core/errors.d.ts",
       "import": "./dist/core/errors.js",
-      "types": "./dist/core/errors.d.ts"
+      "default": "./dist/core/errors.js"
     },
     "./base": {
+      "types": "./dist/base.d.ts",
       "import": "./dist/base.js",
-      "types": "./dist/base.d.ts"
+      "default": "./dist/base.js"
     }
   },
   "files": [
     "dist",
+    "scripts",
+    "privateqa.reporter.mjs",
     "templates",
     "README.md",
     "SYNTAX.md",
     "LICENSE"
   ],
   "scripts": {
+    "postinstall": "node scripts/postinstall.cjs",
     "build": "tsup",
     "prepublishOnly": "npm run build",
     "dev": "tsx src/cli.ts",
@@ -69,10 +76,8 @@
   "engines": {
     "node": ">=20"
   },
-  "peerDependencies": {
-    "@playwright/test": ">=1.40.0"
-  },
   "dependencies": {
+    "@playwright/test": ">=1.40.0",
     "dotenv": "^17.2.3"
   },
   "devDependencies": {

@@ -26,7 +26,7 @@ const COMMUNITY_BANNER = [
   "  Le DOM de la page a peut-être changé depuis le mapping.",
   "  → Relancez  privateqa map <url>  puis  privateqa compile",
   "",
-  "  💡 privateqa Enterprise corrige automatiquement les",
+  "     privateqa Enterprise corrige automatiquement les",
   "     sélecteurs cassés grâce à l'auto-healing IA.",
   "     En savoir plus : https://privateqa.dev/enterprise",
   "───────────────────────────────────────────────────────",

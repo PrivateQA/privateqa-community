@@ -3,7 +3,8 @@ import "./core/env.js";
 import { existsSync } from "node:fs";
 import { readFile, rm, stat } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { defaultConfig } from "./core/config.js";
 import { buildMap } from "./agents/mapper/mapper.js";
 import { compileToSpec } from "./agents/builder/builder.js";
@@ -12,6 +13,11 @@ import { readJsonFile, writeJsonFile, writeTextFile } from "./utils/fs.js";
 import { createLogger, type LogLevel } from "./utils/logger.js";
 import type { MapFile } from "./infrastructure/store.js";
 import { extractTestCases, slugify } from "./utils/scenario.js";
+import { stepsFromMarkdown } from "./core/steps.js";
+
+const __cliDir = dirname(fileURLToPath(import.meta.url));
+const REPORTER_PATH = resolve(__cliDir, "..", "privateqa.reporter.mjs").replace(/\\/g, "/");
+const REPORT_HTML = resolve("test-output", "report.html");
 
 /** Supprime un fichier ou dossier s'il existe (silencieux sinon) */
 async function rmIfExists(p: string) {
@@ -73,27 +79,60 @@ function numFlag(args: Args, key: string, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function openFile(filePath: string) {
+  const abs = resolve(filePath);
+  if (process.platform === "win32") {
+    spawn("cmd", ["/c", "start", "", abs], { stdio: "ignore", detached: true }).unref();
+  } else if (process.platform === "darwin") {
+    spawn("open", [abs], { stdio: "ignore", detached: true }).unref();
+  } else {
+    spawn("xdg-open", [abs], { stdio: "ignore", detached: true }).unref();
+  }
+}
+
+function ensureBrowser(logger: ReturnType<typeof createLogger>) {
+  logger.info("Vérification du navigateur Chromium...");
+  const r = spawnSync("npx", ["playwright", "install", "chromium"], {
+    stdio: "inherit",
+    shell: true,
+  });
+  if (r.status !== 0) {
+    logger.warn("Chromium introuvable. Lancez: npx playwright install chromium");
+  }
+}
+
 function help() {
   console.log(`
 privateqa — Natural-language scenario → Playwright tests
 
-Commands:
-  privateqa map <url> [--out .privateqa/map.json] [--ollama http://127.0.0.1:11434] [--embed-model nomic-embed-text] [--no-embeddings] [--max 200] [--headed]
-  privateqa preprocess <scenario.md> [--out .privateqa/pivot.json] [--ollama ...] [--model mistral] [--no-ai]
-  privateqa compile <scenario.md> [--map .privateqa/map.json] [--out <file.spec.ts|dir>] [--ollama ...] [--embed-model ...]
-                    [--preprocess] [--gen-model mistral] [--no-ai] [--base-import <path>]
+Usage:
+  privateqa run <scenario.md> [--url <url>] [--headed] [--no-map] [--no-embeddings] [--save] [--no-open]
   privateqa run [--headed|--headless] [args...]
-  privateqa report [--input test-output/summary.json] [--out test-output/report.html] [--template templates/report.html]
-  privateqa evolution [--history .privateqa/history.json] [--out test-output/evolution.html] [--template templates/evolution.html]
+
+All-in-one (recommended):
+  npx privateqa run scenario.md                 Map + compile + execute in one go
+  npx privateqa run scenario.md --headed        Same, with a visible browser
+  npx privateqa run scenario.md --url <url>     Override the URL from the scenario
+  npx privateqa run scenario.md --no-map        Skip mapping (reuse existing map)
+  npx privateqa run scenario.md --save          Save this run in the evolution history
+  npx privateqa run scenario.md --no-open       Don't auto-open report in browser
+
+Step-by-step:
+  privateqa map <url> [--out .privateqa/map.json] [--no-embeddings] [--max 200] [--headed]
+  privateqa compile <scenario.md> [--map .privateqa/map.json] [--out <file.spec.ts|dir>] [--base-import <path>]
+  privateqa run [--headed|--headless]
+
+Other:
+  privateqa preprocess <scenario.md> [--out .privateqa/pivot.json] [--ollama ...] [--model mistral] [--no-ai]
+  privateqa report [--input test-output/summary.json] [--out test-output/report.html]
+  privateqa evolution [--history .privateqa/history.json] [--out test-output/evolution.html]
   privateqa api [--port 3000]
 
-Examples:
-  npx privateqa map https://example.com
-  npx privateqa preprocess scenario.md --out .privateqa/scenario.pivot.json
-  npx privateqa compile examples/demo.md
-  npx playwright test
-  npx privateqa run --headed
-  npx privateqa api
+Quick start:
+  npm install privateqa-community
+  echo '- Ouvrir "https://example.com"' > scenario.md
+  echo '- Vérifie que "Example Domain" est visible' >> scenario.md
+  npx privateqa run scenario.md
 `);
 }
 
@@ -276,26 +315,181 @@ async function main() {
   }
 
   if (cmd === "run") {
-    // keep raw args after "run", but allow a couple of flags
     const raw = process.argv.slice(3);
     const runArgs = parseArgs(raw);
     const headed = boolFlag(runArgs, "headed", false);
     const headless = boolFlag(runArgs, "headless", false);
-    const extra = runArgs._; // positional only
+
+    const save = boolFlag(runArgs, "save", false);
 
     const env = { ...process.env };
     if (headed) env.HEADLESS = "false";
     if (headless) env.HEADLESS = "true";
+    if (save) env.PRIVATEQA_SAVE_HISTORY = "1";
 
-    const child = spawn("npx", ["playwright", "test", ...extra], {
-      stdio: "inherit",
-      shell: true,
-      env,
-    });
-    await new Promise<void>((res, rej) => {
-      child.on("exit", (code) => (code === 0 ? res() : rej(new Error(`playwright test exit ${code}`))));
-      child.on("error", rej);
-    });
+    const firstArg = runArgs._[0];
+    const isScenario = firstArg && /\.md$/i.test(firstArg) && existsSync(resolve(firstArg));
+
+    ensureBrowser(logger);
+
+    if (isScenario) {
+      const scenarioPath = firstArg;
+      const urlOverride = strFlag(runArgs, "url");
+      const noMap = boolFlag(runArgs, "no-map", false);
+      const ollama = strFlag(runArgs, "ollama", defaultConfig.ollamaBaseUrl)!;
+      const embedModel = strFlag(runArgs, "embed-model", defaultConfig.embeddingModel)!;
+      const noEmbeddings = boolFlag(runArgs, "no-embeddings", false);
+      const maxElements = numFlag(runArgs, "max", 200);
+      const noAI = boolFlag(runArgs, "no-ai", false);
+      const doPreprocess = boolFlag(runArgs, "preprocess", false);
+      const genModel = strFlag(runArgs, "gen-model", defaultConfig.generationModel)!;
+
+      const scenarioAbs = resolve(scenarioPath);
+      const scenarioContent = await readFile(scenarioAbs, "utf8");
+
+      const steps = stepsFromMarkdown(scenarioContent);
+      const gotoStep = steps.find((s) => s.kind === "goto") as
+        | { kind: "goto"; url: string }
+        | undefined;
+      const url = urlOverride ?? gotoStep?.url;
+
+      // ── 1/3  Map ──────────────────────────────────────────────────────
+      let map: MapFile;
+      const mapPath = defaultConfig.mapPath;
+
+      if (noMap && existsSync(resolve(mapPath))) {
+        logger.info(`[1/3] Réutilisation de la map: ${mapPath}`);
+        map = await readJsonFile<MapFile>(mapPath);
+      } else {
+        if (!url) {
+          throw new Error(
+            'URL introuvable. Ajoutez "Ouvrir https://..." dans le scénario ou passez --url',
+          );
+        }
+        logger.info(`[1/3] Mapping: ${url}`);
+        map = await buildMap({
+          url,
+          ollamaBaseUrl: ollama,
+          embeddingModel: embedModel,
+          computeEmbeddings: !noEmbeddings,
+          maxElements,
+          headed,
+        });
+        await writeJsonFile(mapPath, map);
+        logger.info(`      → ${mapPath} (${map.elements.length} éléments)`);
+      }
+
+      // ── 2/3  Compile ──────────────────────────────────────────────────
+      logger.info(`[2/3] Compilation: ${scenarioPath}`);
+      const baseName = scenarioPath
+        .split(/[\\/]/)
+        .pop()!
+        .replace(/\.\w+$/, "");
+      const cases = extractTestCases(scenarioContent, baseName);
+
+      const baseImportOverride = strFlag(runArgs, "base-import");
+      const hasLocalBase = existsSync(resolve("tests/_privateqa/base.ts"));
+      const resolveBaseImport = (fromFileAbs: string): string | undefined => {
+        if (baseImportOverride) return baseImportOverride;
+        if (hasLocalBase) {
+          const baseAbs = resolve("tests/_privateqa/base");
+          const rel = relative(dirname(fromFileAbs), baseAbs);
+          const withSlashes = rel.replace(/\\/g, "/");
+          return withSlashes.startsWith(".") ? withSlashes : `./${withSlashes}`;
+        }
+        return undefined;
+      };
+
+      const pivot = doPreprocess
+        ? await preprocessScenarioToPivot({
+            scenarioPath,
+            scenarioContent,
+            ollamaBaseUrl: ollama,
+            generationModel: genModel,
+            noAI,
+          })
+        : undefined;
+
+      const specFiles: string[] = [];
+      const singleSpecPath = resolve(defaultConfig.generatedTestsDir, `${baseName}.spec.ts`);
+      const multiSpecDir = resolve(defaultConfig.generatedTestsDir, baseName);
+
+      if (cases.length <= 1) {
+        const out = singleSpecPath;
+        const spec = await compileToSpec({
+          scenarioPath,
+          scenarioContent: cases[0]?.content ?? scenarioContent,
+          steps: pivot?.cases[0]?.steps,
+          map,
+          ollamaBaseUrl: ollama,
+          embeddingModel: embedModel,
+          testTitle: cases[0]?.title,
+          baseTestImportPath: resolveBaseImport(resolve(out)),
+        });
+        await rmIfExists(multiSpecDir);
+        await writeTextFile(out, spec);
+        specFiles.push(out);
+      } else {
+        await rmIfExists(singleSpecPath);
+        await rmIfExists(multiSpecDir);
+        for (const [i, tc] of cases.entries()) {
+          const slug = slugify(tc.title) || `test-${i + 1}`;
+          const file = resolve(multiSpecDir, `${String(i + 1).padStart(2, "0")}-${slug}.spec.ts`);
+          const spec = await compileToSpec({
+            scenarioPath,
+            scenarioContent: tc.content,
+            steps: pivot?.cases[i]?.steps,
+            map,
+            ollamaBaseUrl: ollama,
+            embeddingModel: embedModel,
+            testTitle: tc.title,
+            baseTestImportPath: resolveBaseImport(resolve(file)),
+          });
+          await writeTextFile(file, spec);
+          specFiles.push(file);
+        }
+      }
+      logger.info(`      → ${specFiles.length} spec(s) générée(s)`);
+
+      // ── 3/3  Execute ──────────────────────────────────────────────────
+      logger.info("[3/3] Exécution des tests...");
+      const relPaths = specFiles.map((f) => relative(process.cwd(), f).replace(/\\/g, "/"));
+      const noOpen = boolFlag(runArgs, "no-open", false);
+
+      const pwArgs = ["playwright", "test"];
+      if (existsSync(REPORTER_PATH)) {
+        pwArgs.push(`--reporter=list,${REPORTER_PATH}`);
+      }
+      pwArgs.push(...relPaths);
+
+      const child = spawn("npx", pwArgs, { stdio: "inherit", shell: true, env });
+      const exitCode = await new Promise<number>((res) => {
+        child.on("exit", (code) => res(code ?? 1));
+        child.on("error", () => res(1));
+      });
+
+      if (!noOpen && existsSync(REPORT_HTML)) {
+        logger.info(`Rapport: ${REPORT_HTML}`);
+        openFile(REPORT_HTML);
+      }
+
+      if (exitCode !== 0) {
+        throw new Error(`Tests terminés avec le code ${exitCode}`);
+      }
+    } else {
+      const extra = runArgs._;
+      const child = spawn("npx", ["playwright", "test", ...extra], {
+        stdio: "inherit",
+        shell: true,
+        env,
+      });
+      await new Promise<void>((res, rej) => {
+        child.on("exit", (code) =>
+          code === 0 ? res() : rej(new Error(`playwright test exit ${code}`)),
+        );
+        child.on("error", rej);
+      });
+    }
     return;
   }
 

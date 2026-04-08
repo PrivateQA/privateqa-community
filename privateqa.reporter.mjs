@@ -253,9 +253,12 @@ export default class PrivateQAReporter {
     // ── report.html ─────────────────────────────────────────────────────────
     await this.generateHtmlReport(summary);
 
-    // ── history.json + evolution.html ─────────────────────────────────────
-    await this.appendToHistory(summary);
-    await this.generateEvolutionReport();
+    // ── history.json + evolution.html (uniquement avec --save) ────────────
+    if (process.env.PRIVATEQA_SAVE_HISTORY === "1") {
+      await this.appendToHistory(summary);
+      await this.generateEvolutionReport();
+      console.log("[privateqa] Run sauvegardé dans l'historique d'évolution.");
+    }
   }
 
   /** Ajoute le run courant à l'historique persistant (.privateqa/history.json) */
