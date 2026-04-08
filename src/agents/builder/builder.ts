@@ -2,14 +2,14 @@ import { basename, extname } from "node:path";
 import type { MapFile, MappedElement } from "../../infrastructure/store.js";
 import { LocalVectorStore } from "../../infrastructure/store.js";
 import { OllamaClient } from "../../infrastructure/ollama.js";
-import type { FwkStep } from "../../core/steps.js";
+import type { QAStep } from "../../core/steps.js";
 import { stepsFromMarkdown } from "../../core/steps.js";
 
 export type CompileOptions = {
   scenarioPath: string;
   scenarioContent: string;
   /** Optionnel: permet de bypass le parsing markdown (ex: pivot JSON pré-processé) */
-  steps?: FwkStep[];
+  steps?: QAStep[];
   map: MapFile;
   ollamaBaseUrl: string;
   embeddingModel?: string;
@@ -98,11 +98,8 @@ export async function compileToSpec(opts: CompileOptions) {
   const lines: string[] = [];
   const emit = (s: string) => lines.push(s);
 
-  if (opts.baseTestImportPath) {
-    emit(`import { test, expect, fwkStep } from "${opts.baseTestImportPath}";`);
-  } else {
-    emit(`import { test, expect } from "@playwright/test";`);
-  }
+  const importPath = opts.baseTestImportPath ?? "privateqa-community/base";
+  emit(`import { test, expect, qaStep } from "${importPath}";`);
   emit(``);
   const scenarioName = basename(opts.scenarioPath, extname(opts.scenarioPath));
   const title = opts.testTitle ? `Scenario: ${opts.testTitle}` : `Scenario: ${scenarioName}`;
@@ -114,13 +111,9 @@ export async function compileToSpec(opts: CompileOptions) {
     stepVar++;
     const label = step.raw.replace(/\s+/g, " ").trim();
     const emitStep = (bodyLines: string[]) => {
-      if (opts.baseTestImportPath) {
-        emit(`  await fwkStep(testInfo, page, ${stepVar}, ${JSON.stringify(label)}, async () => {`);
-        for (const l of bodyLines) emit(`    ${l}`);
-        emit(`  });`);
-      } else {
-        for (const l of bodyLines) emit(`  ${l}`);
-      }
+      emit(`  await qaStep(testInfo, page, ${stepVar}, ${JSON.stringify(label)}, async () => {`);
+      for (const l of bodyLines) emit(`    ${l}`);
+      emit(`  });`);
     };
 
     if (step.kind === "goto") {

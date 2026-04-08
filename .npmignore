@@ -1,0 +1,38 @@
+# Sources (seul dist/ est publié)
+src/
+tests/
+enterprise/
+
+# Config dev
+tsconfig.json
+tsup.config.ts
+eslint.config.js
+.prettierrc.json
+playwright.config.ts
+
+# Données locales / personnelles
+.env
+.env.*
+!.env.example
+.privateqa/
+test-output/
+test-results/
+playwright-report/
+scenario.md
+
+# Docs internes
+explication.md
+COMMANDES.md
+
+# IDE / OS
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Misc
+node_modules/
+*.tgz

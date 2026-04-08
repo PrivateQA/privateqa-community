@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { extractTestCases } from "../../utils/scenario.js";
 import { OllamaClient } from "../../infrastructure/ollama.js";
-import type { FwkStep } from "../../core/steps.js";
+import type { QAStep } from "../../core/steps.js";
 import { stepsFromMarkdown } from "../../core/steps.js";
 
 export type PivotScenarioV1 = {
@@ -14,7 +14,7 @@ export type PivotScenarioV1 = {
   cases: Array<{
     id: string;
     title: string;
-    steps: FwkStep[];
+    steps: QAStep[];
   }>;
 };
 
@@ -50,9 +50,9 @@ function asNumber(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
 }
 
-function validateSteps(rawSteps: unknown, maxSteps: number): FwkStep[] | undefined {
+function validateSteps(rawSteps: unknown, maxSteps: number): QAStep[] | undefined {
   if (!Array.isArray(rawSteps)) return undefined;
-  const out: FwkStep[] = [];
+  const out: QAStep[] = [];
 
   for (const item of rawSteps.slice(0, maxSteps)) {
     if (!isRecord(item)) return undefined;
@@ -166,7 +166,7 @@ export async function preprocessScenarioToPivot(opts: PreprocessOptions): Promis
 
   const outCases: PivotScenarioV1["cases"] = [];
   for (const tc of cases) {
-    let steps: FwkStep[] | undefined;
+    let steps: QAStep[] | undefined;
 
     if (ollama) {
       try {

@@ -1,13 +1,40 @@
 {
-  "name": "fwktest",
-  "version": "0.0.1",
-  "private": true,
+  "name": "privateqa-community",
+  "version": "0.1.0",
   "type": "module",
+  "description": "Write tests in natural language, run them with Playwright. Plugin-extensible.",
+  "license": "MIT",
   "bin": {
-    "fwkTest": "dist/cli.js"
+    "privateqa": "dist/cli.js"
   },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./plugin": {
+      "import": "./dist/core/plugin.js",
+      "types": "./dist/core/plugin.d.ts"
+    },
+    "./errors": {
+      "import": "./dist/core/errors.js",
+      "types": "./dist/core/errors.d.ts"
+    },
+    "./base": {
+      "import": "./dist/base.js",
+      "types": "./dist/base.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "templates",
+    "README.md",
+    "SYNTAX.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
+    "prepublishOnly": "npm run build",
     "dev": "tsx src/cli.ts",
     "map": "tsx src/cli.ts map",
     "preprocess": "tsx src/cli.ts preprocess",
@@ -20,10 +47,34 @@
     "lint": "eslint .",
     "format": "prettier -w ."
   },
-  "keywords": [],
+  "keywords": [
+    "playwright",
+    "testing",
+    "natural-language",
+    "scenario",
+    "e2e",
+    "test-generator",
+    "automation",
+    "no-code"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PrivateQA/privateqa-community.git"
+  },
+  "homepage": "https://github.com/PrivateQA/privateqa-community#readme",
+  "bugs": {
+    "url": "https://github.com/PrivateQA/privateqa-community/issues"
+  },
   "author": "",
-  "license": "ISC",
-  "description": "",
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.40.0"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@playwright/test": "^1.58.1",
@@ -34,8 +85,5 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.54.0"
-  },
-  "dependencies": {
-    "dotenv": "^17.2.3"
   }
 }

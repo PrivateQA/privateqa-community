@@ -24,7 +24,7 @@ export default tseslint.config(
       "playwright-report/**",
       "test-results/**",
       "tests/generated/**",
-      "fwkTest.reporter.mjs",
+      "privateqa.reporter.mjs",
     ],
   },
 );

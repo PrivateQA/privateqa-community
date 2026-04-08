@@ -170,7 +170,7 @@ export function startServer(router: Router, port: number, logLevel: LogLevel = "
   });
 
   server.listen(port, () => {
-    logger.info(`fwkTest API démarrée sur http://localhost:${port}`);
+    logger.info(`privateqa API started on http://localhost:${port}`);
     logger.info(`Endpoints disponibles :`);
     logger.info(`  GET  /api/health`);
     logger.info(`  POST /api/preprocess`);

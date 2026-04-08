@@ -30,7 +30,7 @@ export default defineConfig({
   workers: workers ?? (isHeaded ? 1 : undefined),
   testMatch,
   outputDir: `${outputRoot}/.playwright`,
-  reporter: [["list"], ["./fwkTest.reporter.mjs"]],
+  reporter: [["list"], ["./privateqa.reporter.mjs"]],
   use: {
     headless,
     trace: "on-first-retry",

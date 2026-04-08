@@ -1,63 +1,123 @@
-# fwkTest
+# privateqa
 
-Framework de tests E2E "agentique" **100% on-prem** (MVP).
+Write end-to-end tests in natural language, run them with Playwright.
 
-## Objectif MVP
+privateqa translates human-readable scenarios (plain text / Markdown) into fully executable Playwright test specs — no step definitions, no Gherkin boilerplate.
 
-1. **Mapper** une UI cible (DOM interactif → "carte" locale).
-2. **Compiler** un scénario en français (`.md`) → un test Playwright `.spec.ts`.
-3. **Exécuter** les tests via Playwright (sans IA en runtime).
+## Features
 
-## Prérequis
+- **Natural-language scenarios** — Describe test steps in French or English, privateqa parses and compiles them to Playwright TypeScript.
+- **DOM mapping** — Crawl a page to build a map of interactive elements with optional embeddings for smart locator matching.
+- **Smart locator resolution** — Matches scenario intent to real DOM elements using cosine similarity (embeddings) or Jaccard text matching.
+- **Plugin system** — Extend the test runtime with plugins (error interception, retry logic, custom hooks).
+- **Detailed reporting** — Per-step screenshots, JSON logs, HTML reports, and run-over-run evolution charts.
+- **CLI + REST API** — Use from the terminal or integrate via HTTP.
 
-- Node.js 20+
-- (Optionnel) **Ollama** en local pour les embeddings: `nomic-embed-text`
-
-## Démarrage rapide
-
-Installer:
+## Quick start
 
 ```bash
-npm i
+npm install privateqa-community @playwright/test
+npx playwright install
 ```
 
-Mapper une page (génère `.fwkTest/map.json`):
+### 1. Map your application
 
 ```bash
-npm run map -- https://example.com
+npx privateqa map https://your-app.example.com
 ```
 
-Compiler un scénario markdown en spec Playwright:
+This crawls the page and creates `.privateqa/map.json` with all interactive elements.
+
+### 2. Write a scenario
+
+Create a Markdown file (e.g. `scenario.md`):
+
+```markdown
+# My first test
+
+- Ouvrir "https://your-app.example.com"
+- Clique sur "Login"
+- Remplis "Email" avec "user@example.com"
+- Remplis "Password" avec "secret"
+- Clique sur "Submit"
+- Vérifie que "Welcome" est visible
+```
+
+See [SYNTAX.md](./SYNTAX.md) for the full formalism reference.
+
+### 3. Compile to Playwright
 
 ```bash
-npm run compile -- examples/demo.md
+npx privateqa compile scenario.md
 ```
 
-Compiler un cahier de tests (multi-cas) en plusieurs specs:
+This generates a `.spec.ts` file in `tests/generated/`.
+
+### 4. Run
 
 ```bash
-npm run compile -- cahier.md
-# -> génère un dossier tests/generated/cahier/ avec 01-..., 02-..., etc.
+npx playwright test
 ```
 
-Lancer les tests:
+## CLI reference
 
-```bash
-npm test
+| Command | Description |
+|---------|-------------|
+| `privateqa map <url>` | Crawl a URL and build a DOM map |
+| `privateqa preprocess <scenario.md>` | Normalize steps with optional AI assistance |
+| `privateqa compile <scenario.md>` | Generate Playwright spec(s) from a scenario |
+| `privateqa run [--headed]` | Run generated tests via Playwright |
+| `privateqa report` | Generate an HTML report from the last run |
+| `privateqa evolution` | Generate an evolution chart across runs |
+| `privateqa api` | Start the REST API server |
+
+## Plugin system
+
+privateqa exposes a plugin API to intercept step failures, add retry logic, or hook into test lifecycle events.
+
+```typescript
+import { registerPlugin } from "privateqa-community";
+import type { QAPlugin } from "privateqa-community";
+
+const myPlugin: QAPlugin = {
+  name: "my-plugin",
+  async onStepFailure(ctx) {
+    console.log(`Step "${ctx.label}" failed:`, ctx.error.message);
+    return { action: "fail" };
+  },
+};
+
+registerPlugin(myPlugin);
 ```
 
-## Sorties d'exécution (non-régression)
+### Plugin hooks
 
-Après un run, le dossier `test-output/` est généré:
+| Hook | When |
+|------|------|
+| `onStepFailure(ctx)` | A test step throws — return `retry`, `skip`, or `fail` |
+| `onTestBegin(page, testInfo)` | Before each test |
+| `onTestEnd(page, testInfo)` | After each test |
 
-- **`test-output/screenshots/success/`**: screenshot final des tests passés
-- **`test-output/screenshots/failed/`**: screenshot final + screenshots “step-*” au moment de l’erreur
-- **`test-output/logs/*.json`**: log détaillé par test (status, erreur, console, request failed, etc.)
-- **`test-output/summary.json`** / **`test-output/summary.md`**: récapitulatif global
-- **`test-output/run.jsonl`**: un enregistrement JSON par test (streamable)
+## Exports
 
-## Notes (choix workflow)
+| Import path | Contents |
+|-------------|----------|
+| `privateqa-community` | Plugin API, step types, builder, store |
+| `privateqa-community/base` | Playwright test fixtures (`test`, `expect`, `qaStep`) |
+| `privateqa-community/plugin` | Plugin types and registry only |
+| `privateqa-community/errors` | Error detection and enrichment utilities |
 
-- **Locators Playwright plutôt que CSS**: le mapper stocke d'abord des locators stables (`getByRole`, `getByTestId`, `getByText`) avant de tomber sur du CSS. Ça simplifie énormément l'auto-healing plus tard.
-- **Store JSON local (MVP)**: rapide à mettre en place; on branchera ensuite SQLite/Chroma quand on voudra persister, versionner et requêter à grande échelle.
+## Environment variables
 
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server for AI features |
+| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model |
+| `OLLAMA_GEN_MODEL` | `mistral` | Generation model |
+| `HEADLESS` | `true` | Run browser headless |
+| `TEST_OUTPUT_DIR` | `test-output` | Output directory for reports |
+| `PRIVATEQA_MAX_RETRIES` | `1` | Max plugin retry attempts per step |
+
+## License
+
+[MIT](./LICENSE)

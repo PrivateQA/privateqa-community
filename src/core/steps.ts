@@ -1,4 +1,4 @@
-export type FwkStep =
+export type QAStep =
   | { kind: "goto"; url: string; raw: string }
   | { kind: "click"; target: string; index?: number; raw: string }
   | { kind: "fill"; target: string; value: string; index?: number; raw: string }
@@ -69,7 +69,7 @@ export function parseStepsFromMarkdown(md: string): string[] {
   return out.filter(Boolean);
 }
 
-export function toStep(raw: string): FwkStep {
+export function toStep(raw: string): QAStep {
   const s = raw.trim();
   const q = extractQuoted(s);
   const indexMatch = s.match(/\[(\d+)\]\s*$/);
@@ -141,7 +141,7 @@ export function toStep(raw: string): FwkStep {
   return { kind: "unknown", raw };
 }
 
-export function stepsFromMarkdown(md: string): FwkStep[] {
+export function stepsFromMarkdown(md: string): QAStep[] {
   return parseStepsFromMarkdown(md).map(toStep);
 }
 

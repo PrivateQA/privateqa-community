@@ -45,7 +45,7 @@ function requireBody<T>(ctx: RouteContext, ...keys: string[]): T {
 
 type RunResult = { exitCode: number; stdout: string; stderr: string };
 
-function runPlaywrightProcess(extraArgs: string[] = {}, env?: Record<string, string>): Promise<RunResult> {
+function runPlaywrightProcess(extraArgs: string[] = [], env?: Record<string, string>): Promise<RunResult> {
   return new Promise((resolve) => {
     const child = spawn("npx", ["playwright", "test", ...extraArgs], {
       shell: true,
@@ -82,7 +82,7 @@ async function listFilesRecursive(dir: string): Promise<string[]> {
 export function registerRoutes(router: Router) {
   // ── Health ──────────────────────────────────────────────────────────────
   router.get("/api/health", async ({ res }) => {
-    json(res, { status: "ok", version: "0.0.1", timestamp: new Date().toISOString() });
+    json(res, { status: "ok", version: "0.1.0", timestamp: new Date().toISOString() });
   });
 
   // ── POST /api/preprocess ───────────────────────────────────────────────
@@ -115,7 +115,7 @@ export function registerRoutes(router: Router) {
     });
 
     // Sauvegarder le pivot
-    const pivotPath = resolve(".fwkTest", "pivot.json");
+    const pivotPath = resolve(".privateqa", "pivot.json");
     await writeJsonFile(pivotPath, pivot);
 
     json(ctx.res, { success: true, pivotPath, pivot });
@@ -156,7 +156,7 @@ export function registerRoutes(router: Router) {
       : undefined;
 
     const cases = extractTestCases(scenarioContent, baseName);
-    const baseAbs = resolve("tests/_fwkTest/base");
+    const baseAbs = resolve("tests/_privateqa/base");
     const toImportPath = (fromFileAbs: string) => {
       const rel = relative(resolve(fromFileAbs, ".."), baseAbs);
       const withSlashes = rel.replace(/\\/g, "/");
@@ -382,7 +382,7 @@ export function registerRoutes(router: Router) {
         generationModel: defaultConfig.generationModel,
         noAI: noAI ?? false,
       });
-      const pivotPath = resolve(".fwkTest", "pivot.json");
+      const pivotPath = resolve(".privateqa", "pivot.json");
       await writeJsonFile(pivotPath, pivot);
       results.preprocess = { cases: pivot.cases.length, pivotPath };
     }
@@ -394,7 +394,7 @@ export function registerRoutes(router: Router) {
     const baseName = scenario.split(/[\\/]/).pop()!.replace(/\.\w+$/, "");
     const map = await readJsonFile<MapFile>(defaultConfig.mapPath);
     const cases = extractTestCases(scenarioContent, baseName);
-    const baseAbs = resolve("tests/_fwkTest/base");
+    const baseAbs = resolve("tests/_privateqa/base");
     const toImportPath = (fromFileAbs: string) => {
       const rel = relative(resolve(fromFileAbs, ".."), baseAbs);
       const withSlashes = rel.replace(/\\/g, "/");

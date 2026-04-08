@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import "./core/env.js";
+import { existsSync } from "node:fs";
 import { readFile, rm, stat } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -74,25 +75,25 @@ function numFlag(args: Args, key: string, fallback: number) {
 
 function help() {
   console.log(`
-fwkTest (MVP)
+privateqa — Natural-language scenario → Playwright tests
 
-Commandes:
-  fwkTest map <url> [--out .fwkTest/map.json] [--ollama http://127.0.0.1:11434] [--embed-model nomic-embed-text] [--no-embeddings] [--max 200] [--headed]
-  fwkTest preprocess <scenario.md> [--out .fwkTest/pivot.json] [--ollama ...] [--model mistral] [--no-ai]
-  fwkTest compile <scenario.md> [--map .fwkTest/map.json] [--out <fichier.spec.ts|dossier>] [--ollama ...] [--embed-model ...]
-                  [--preprocess] [--gen-model mistral] [--no-ai]
-  fwkTest run [--headed|--headless] [args...]
-  fwkTest report [--input test-output/summary.json] [--out test-output/report.html] [--template templates/report.html]
-  fwkTest evolution [--history .fwkTest/history.json] [--out test-output/evolution.html] [--template templates/evolution.html]
-  fwkTest api [--port 3000]
+Commands:
+  privateqa map <url> [--out .privateqa/map.json] [--ollama http://127.0.0.1:11434] [--embed-model nomic-embed-text] [--no-embeddings] [--max 200] [--headed]
+  privateqa preprocess <scenario.md> [--out .privateqa/pivot.json] [--ollama ...] [--model mistral] [--no-ai]
+  privateqa compile <scenario.md> [--map .privateqa/map.json] [--out <file.spec.ts|dir>] [--ollama ...] [--embed-model ...]
+                    [--preprocess] [--gen-model mistral] [--no-ai] [--base-import <path>]
+  privateqa run [--headed|--headless] [args...]
+  privateqa report [--input test-output/summary.json] [--out test-output/report.html] [--template templates/report.html]
+  privateqa evolution [--history .privateqa/history.json] [--out test-output/evolution.html] [--template templates/evolution.html]
+  privateqa api [--port 3000]
 
-Exemples:
-  npm run map -- https://example.com
-  npm run dev -- preprocess scenario.md --out .fwkTest/scenario.pivot.json
-  npm run compile -- examples/demo.md
-  npm test
-  npm run run -- --headed
-  npm run api
+Examples:
+  npx privateqa map https://example.com
+  npx privateqa preprocess scenario.md --out .privateqa/scenario.pivot.json
+  npx privateqa compile examples/demo.md
+  npx playwright test
+  npx privateqa run --headed
+  npx privateqa api
 `);
 }
 
@@ -113,7 +114,7 @@ async function main() {
 
   if (cmd === "map") {
     const url = args._[1] ?? strFlag(args, "url");
-    if (!url) throw new Error("map: URL manquante. Ex: fwkTest map https://example.com");
+    if (!url) throw new Error("map: URL manquante. Ex: privateqa map https://example.com");
 
     const out = strFlag(args, "out", defaultConfig.mapPath)!;
     const ollama = strFlag(args, "ollama", defaultConfig.ollamaBaseUrl)!;
@@ -138,7 +139,7 @@ async function main() {
 
   if (cmd === "compile") {
     const scenarioPath = args._[1] ?? strFlag(args, "scenario");
-    if (!scenarioPath) throw new Error("compile: scénario manquant. Ex: fwkTest compile examples/demo.md");
+    if (!scenarioPath) throw new Error("compile: scénario manquant. Ex: privateqa compile examples/demo.md");
 
     const mapPath = strFlag(args, "map", defaultConfig.mapPath)!;
     const outFlag = strFlag(args, "out");
@@ -156,11 +157,18 @@ async function main() {
 
     const baseName = scenarioPath.split(/[\\/]/).pop()!.replace(/\.\w+$/, "");
     const cases = extractTestCases(scenarioContent, baseName);
-    const baseAbs = resolve("tests/_fwkTest/base");
-    const toImportPath = (fromFileAbs: string) => {
-      const rel = relative(dirname(fromFileAbs), baseAbs);
-      const withSlashes = rel.replace(/\\/g, "/");
-      return withSlashes.startsWith(".") ? withSlashes : `./${withSlashes}`;
+
+    const baseImportOverride = strFlag(args, "base-import");
+    const hasLocalBase = existsSync(resolve("tests/_privateqa/base.ts"));
+    const resolveBaseImport = (fromFileAbs: string): string | undefined => {
+      if (baseImportOverride) return baseImportOverride;
+      if (hasLocalBase) {
+        const baseAbs = resolve("tests/_privateqa/base");
+        const rel = relative(dirname(fromFileAbs), baseAbs);
+        const withSlashes = rel.replace(/\\/g, "/");
+        return withSlashes.startsWith(".") ? withSlashes : `./${withSlashes}`;
+      }
+      return undefined;
     };
 
     const pivot = doPreprocess
@@ -180,7 +188,6 @@ async function main() {
     // Si un seul test est détecté, comportement identique à avant (1 fichier)
     if (cases.length <= 1) {
       const out = outFlag ?? singleSpecPath;
-      const baseImport = toImportPath(resolve(out));
       const spec = await compileToSpec({
         scenarioPath,
         scenarioContent: cases[0]?.content ?? scenarioContent,
@@ -189,7 +196,7 @@ async function main() {
         ollamaBaseUrl: ollama,
         embeddingModel: embedModel,
         testTitle: cases[0]?.title,
-        baseTestImportPath: baseImport,
+        baseTestImportPath: resolveBaseImport(resolve(out)),
       });
 
       // Nettoyage: supprimer l'ancien dossier multi-specs s'il existe
@@ -214,7 +221,6 @@ async function main() {
     for (const [i, tc] of cases.entries()) {
       const slug = slugify(tc.title) || `test-${i + 1}`;
       const file = resolve(outDir, `${String(i + 1).padStart(2, "0")}-${slug}.spec.ts`);
-      const baseImport = toImportPath(resolve(file));
       const spec = await compileToSpec({
         scenarioPath,
         scenarioContent: tc.content,
@@ -223,7 +229,7 @@ async function main() {
         ollamaBaseUrl: ollama,
         embeddingModel: embedModel,
         testTitle: tc.title,
-        baseTestImportPath: baseImport,
+        baseTestImportPath: resolveBaseImport(resolve(file)),
       });
       await writeTextFile(file, spec);
     }
@@ -233,9 +239,9 @@ async function main() {
 
   if (cmd === "preprocess") {
     const scenarioPath = args._[1] ?? strFlag(args, "scenario");
-    if (!scenarioPath) throw new Error("preprocess: scénario manquant. Ex: fwkTest preprocess scenario.md");
+    if (!scenarioPath) throw new Error("preprocess: scénario manquant. Ex: privateqa preprocess scenario.md");
 
-    const out = strFlag(args, "out", resolve(".fwkTest", "pivot.json"))!;
+    const out = strFlag(args, "out", resolve(".privateqa", "pivot.json"))!;
     const ollama = strFlag(args, "ollama", defaultConfig.ollamaBaseUrl)!;
     const model = strFlag(args, "model", defaultConfig.generationModel)!;
     const noAI = boolFlag(args, "no-ai", false);
@@ -314,7 +320,7 @@ async function main() {
   }
 
   if (cmd === "evolution") {
-    const historyFile = strFlag(args, "history", ".fwkTest/history.json")!;
+    const historyFile = strFlag(args, "history", ".privateqa/history.json")!;
     const out = strFlag(args, "out", "test-output/evolution.html")!;
     const template = strFlag(args, "template", resolve("templates", "evolution.html"))!;
 

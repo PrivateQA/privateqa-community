@@ -55,12 +55,12 @@ function pickAttachment(attachments, name) {
 }
 
 /**
- * Extrait les résultats par step depuis l'attachement JSON "fwk-steps"
+ * Extrait les résultats par step depuis l'attachement JSON "qa-steps"
  * que base.ts attache à chaque test.
  */
 function extractStepsFromAttachments(attachments) {
   const att = attachments?.find(
-    (a) => a.name === "fwk-steps" && a.contentType === "application/json",
+    (a) => a.name === "qa-steps" && a.contentType === "application/json",
   );
   if (!att?.body) return [];
   try {
@@ -71,9 +71,9 @@ function extractStepsFromAttachments(attachments) {
   }
 }
 
-const HISTORY_DIR = process.env.FWKTEST_DATA_DIR ?? ".fwkTest";
+const HISTORY_DIR = process.env.PRIVATEQA_DATA_DIR ?? ".privateqa";
 
-export default class FwkTestReporter {
+export default class PrivateQAReporter {
   constructor() {
     this.results = [];
     this.jsonlPath = path.join(OUTPUT_ROOT, "run.jsonl");
@@ -195,7 +195,7 @@ export default class FwkTestReporter {
 
     // ── summary.md ──────────────────────────────────────────────────────────
     const md = [];
-    md.push(`# fwkTest - Résumé d'exécution`);
+    md.push(`# privateqa - Résumé d'exécution`);
     md.push("");
     md.push(`| Métrique | Valeur |`);
     md.push(`|----------|--------|`);
@@ -258,7 +258,7 @@ export default class FwkTestReporter {
     await this.generateEvolutionReport();
   }
 
-  /** Ajoute le run courant à l'historique persistant (.fwkTest/history.json) */
+  /** Ajoute le run courant à l'historique persistant (.privateqa/history.json) */
   async appendToHistory(summary) {
     try {
       await ensureDir(HISTORY_DIR);
@@ -287,7 +287,7 @@ export default class FwkTestReporter {
       await writeFile(this.historyPath, JSON.stringify(history, null, 2), "utf8");
     } catch (err) {
       console.warn(
-        `[fwkTest] Impossible de mettre à jour l'historique: ${err.message}`,
+        `[privateqa] Impossible de mettre à jour l'historique: ${err.message}`,
       );
     }
   }
@@ -307,7 +307,7 @@ export default class FwkTestReporter {
       await writeFile(this.evolutionHtmlPath, html, "utf8");
     } catch (err) {
       console.warn(
-        `[fwkTest] Impossible de générer evolution.html: ${err.message}`,
+        `[privateqa] Impossible de générer evolution.html: ${err.message}`,
       );
     }
   }
@@ -324,7 +324,7 @@ export default class FwkTestReporter {
     } catch (err) {
       // Si le template n'est pas trouvé, log un warning mais ne crash pas
       console.warn(
-        `[fwkTest] ⚠️  Impossible de générer report.html: ${err.message}`,
+        `[privateqa] ⚠️  Impossible de générer report.html: ${err.message}`,
       );
     }
   }

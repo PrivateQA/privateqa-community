@@ -1,7 +1,16 @@
 node_modules/
 dist/
 test-results/
+test-output/
 playwright-report/
+.privateqa/
 .fwkTest/
+enterprise/
 .env
+.env.local
+*.tgz
 
+# Internal dev docs (not published)
+COMMANDES.md
+explication.md
+scenario.md
