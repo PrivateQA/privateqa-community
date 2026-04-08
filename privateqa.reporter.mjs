@@ -156,6 +156,8 @@ export default class PrivateQAReporter {
   }
 
   async onEnd() {
+    await ensureDir(OUTPUT_ROOT);
+
     const passed = this.results.filter((r) => r.status === "passed").length;
     const failed = this.results.filter((r) => r.status === "failed").length;
     const skipped = this.results.filter((r) => r.status === "skipped").length;

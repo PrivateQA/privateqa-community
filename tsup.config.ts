@@ -8,7 +8,7 @@ export default defineConfig({
     "src/core/plugin.ts",
     "src/core/errors.ts",
   ],
-  format: ["esm"],
+  format: ["esm", "cjs"],
   platform: "node",
   target: "node20",
   sourcemap: true,
