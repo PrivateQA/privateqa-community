@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm, stat } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { defaultConfig } from "./core/config.js";
 import { buildMap } from "./agents/mapper/mapper.js";
 import { compileToSpec } from "./agents/builder/builder.js";
@@ -14,6 +14,7 @@ import { createLogger, type LogLevel } from "./utils/logger.js";
 import type { MapFile } from "./infrastructure/store.js";
 import { extractTestCases, slugify } from "./utils/scenario.js";
 import { stepsFromMarkdown } from "./core/steps.js";
+import { applyGlossaryToMarkdown, type GlossaryFile } from "./utils/glossary.js";
 
 const __cliDir = dirname(fileURLToPath(import.meta.url));
 const REPORTER_PATH = resolve(__cliDir, "..", "privateqa.reporter.mjs").replace(/\\/g, "/");
@@ -79,15 +80,29 @@ function numFlag(args: Args, key: string, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function openFile(filePath: string) {
+async function openFile(filePath: string) {
   const abs = resolve(filePath);
-  if (process.platform === "win32") {
-    spawn("cmd", ["/c", "start", "", abs], { stdio: "ignore", detached: true }).unref();
-  } else if (process.platform === "darwin") {
-    spawn("open", [abs], { stdio: "ignore", detached: true }).unref();
-  } else {
-    spawn("xdg-open", [abs], { stdio: "ignore", detached: true }).unref();
+  const fileUrl = pathToFileURL(abs).href;
+  // Ouvre le rapport via le Chromium Playwright dans le même process shell
+  // (pas de fenêtre cmd supplémentaire).
+  const child = spawn("npx", ["playwright", "open", fileUrl], {
+    stdio: "inherit",
+    shell: true,
+    windowsHide: true,
+  });
+  await new Promise<void>((resolveDone) => {
+    child.on("exit", () => resolveDone());
+    child.on("error", () => resolveDone());
+  });
+}
+
+function resolveGlossaryPath(customPath?: string) {
+  if (customPath) {
+    const abs = resolve(customPath);
+    return existsSync(abs) ? abs : undefined;
   }
+  const candidates = [resolve(".privateqa", "glossary.json"), resolve("glossary.json")];
+  return candidates.find((p) => existsSync(p));
 }
 
 function ensureBrowser(logger: ReturnType<typeof createLogger>) {
@@ -106,7 +121,7 @@ function help() {
 privateqa — Natural-language scenario → Playwright tests
 
 Usage:
-  privateqa run <scenario.md> [--url <url>] [--headed] [--no-map] [--no-embeddings] [--save] [--no-open]
+  privateqa run <scenario.md> [--url <url>] [--headed] [--no-map] [--no-embeddings] [--save] [--reporter] [--no-open]
   privateqa run [--headed|--headless] [args...]
 
 All-in-one (recommended):
@@ -114,16 +129,19 @@ All-in-one (recommended):
   npx privateqa run scenario.md --headed        Same, with a visible browser
   npx privateqa run scenario.md --url <url>     Override the URL from the scenario
   npx privateqa run scenario.md --no-map        Skip mapping (reuse existing map)
+  npx privateqa run scenario.md --map-headed    Show browser only during mapping
+  npx privateqa run scenario.md --glossary .privateqa/glossary.json   Apply business glossary
   npx privateqa run scenario.md --save          Save this run in the evolution history
+  npx privateqa run scenario.md --reporter      Open report in Chromium at the end
   npx privateqa run scenario.md --no-open       Don't auto-open report in browser
 
 Step-by-step:
   privateqa map <url> [--out .privateqa/map.json] [--no-embeddings] [--max 200] [--headed]
-  privateqa compile <scenario.md> [--map .privateqa/map.json] [--out <file.spec.ts|dir>] [--base-import <path>]
+  privateqa compile <scenario.md> [--map .privateqa/map.json] [--out <file.spec.ts|dir>] [--base-import <path>] [--glossary <path>]
   privateqa run [--headed|--headless]
 
 Other:
-  privateqa preprocess <scenario.md> [--out .privateqa/pivot.json] [--ollama ...] [--model mistral] [--no-ai]
+  privateqa preprocess <scenario.md> [--out .privateqa/pivot.json] [--ollama ...] [--model mistral] [--no-ai] [--glossary <path>]
   privateqa report [--input test-output/summary.json] [--out test-output/report.html]
   privateqa evolution [--history .privateqa/history.json] [--out test-output/evolution.html]
   privateqa api [--port 3000]
@@ -192,7 +210,18 @@ async function main() {
     const map = await readJsonFile<MapFile>(mapPath);
     const scenarioAbs = resolve(scenarioPath);
     logger.info(`Lecture scénario: ${scenarioAbs}`);
-    const scenarioContent = await readFile(scenarioAbs, "utf8");
+    let scenarioContent = await readFile(scenarioAbs, "utf8");
+    const glossaryPath = resolveGlossaryPath(strFlag(args, "glossary"));
+    if (glossaryPath) {
+      const glossary = await readJsonFile<GlossaryFile>(glossaryPath);
+      const applied = applyGlossaryToMarkdown(scenarioContent, glossary);
+      scenarioContent = applied.content;
+      if (applied.replacements.length > 0) {
+        logger.info(
+          `Glossaire appliqué: ${glossaryPath} (${applied.replacements.reduce((a, b) => a + b.count, 0)} remplacements)`,
+        );
+      }
+    }
 
     const baseName = scenarioPath.split(/[\\/]/).pop()!.replace(/\.\w+$/, "");
     const cases = extractTestCases(scenarioContent, baseName);
@@ -287,7 +316,18 @@ async function main() {
 
     const scenarioAbs = resolve(scenarioPath);
     logger.info(`Lecture scénario: ${scenarioAbs}`);
-    const scenarioContent = await readFile(scenarioAbs, "utf8");
+    let scenarioContent = await readFile(scenarioAbs, "utf8");
+    const glossaryPath = resolveGlossaryPath(strFlag(args, "glossary"));
+    if (glossaryPath) {
+      const glossary = await readJsonFile<GlossaryFile>(glossaryPath);
+      const applied = applyGlossaryToMarkdown(scenarioContent, glossary);
+      scenarioContent = applied.content;
+      if (applied.replacements.length > 0) {
+        logger.info(
+          `Glossaire appliqué: ${glossaryPath} (${applied.replacements.reduce((a, b) => a + b.count, 0)} remplacements)`,
+        );
+      }
+    }
 
     const pivot = await preprocessScenarioToPivot({
       scenarioPath,
@@ -323,6 +363,8 @@ async function main() {
     const save = boolFlag(runArgs, "save", false);
 
     const env = { ...process.env };
+    // Par défaut, forcer headless si aucun flag n'est donné.
+    env.HEADLESS = "true";
     if (headed) env.HEADLESS = "false";
     if (headless) env.HEADLESS = "true";
     if (save) env.PRIVATEQA_SAVE_HISTORY = "1";
@@ -336,6 +378,7 @@ async function main() {
       const scenarioPath = firstArg;
       const urlOverride = strFlag(runArgs, "url");
       const noMap = boolFlag(runArgs, "no-map", false);
+      const mapHeaded = boolFlag(runArgs, "map-headed", false);
       const ollama = strFlag(runArgs, "ollama", defaultConfig.ollamaBaseUrl)!;
       const embedModel = strFlag(runArgs, "embed-model", defaultConfig.embeddingModel)!;
       const noEmbeddings = boolFlag(runArgs, "no-embeddings", false);
@@ -345,7 +388,18 @@ async function main() {
       const genModel = strFlag(runArgs, "gen-model", defaultConfig.generationModel)!;
 
       const scenarioAbs = resolve(scenarioPath);
-      const scenarioContent = await readFile(scenarioAbs, "utf8");
+      let scenarioContent = await readFile(scenarioAbs, "utf8");
+      const glossaryPath = resolveGlossaryPath(strFlag(runArgs, "glossary"));
+      if (glossaryPath) {
+        const glossary = await readJsonFile<GlossaryFile>(glossaryPath);
+        const applied = applyGlossaryToMarkdown(scenarioContent, glossary);
+        scenarioContent = applied.content;
+        if (applied.replacements.length > 0) {
+          logger.info(
+            `Glossaire appliqué: ${glossaryPath} (${applied.replacements.reduce((a, b) => a + b.count, 0)} remplacements)`,
+          );
+        }
+      }
 
       const steps = stepsFromMarkdown(scenarioContent);
       const gotoStep = steps.find((s) => s.kind === "goto") as
@@ -373,7 +427,9 @@ async function main() {
           embeddingModel: embedModel,
           computeEmbeddings: !noEmbeddings,
           maxElements,
-          headed,
+          // Mapping headless par défaut pour éviter l'ouverture visuelle de la fenêtre.
+          // Peut être surchargé via --map-headed.
+          headed: mapHeaded,
         });
         await writeJsonFile(mapPath, map);
         logger.info(`      → ${mapPath} (${map.elements.length} éléments)`);
@@ -468,9 +524,12 @@ async function main() {
         child.on("error", () => res(1));
       });
 
-      if (!noOpen && existsSync(REPORT_HTML)) {
+      // Ouvre le rapport par défaut (sauf --no-open).
+      // --reporter est conservé pour compatibilité/explicitation.
+      const openReporter = boolFlag(runArgs, "reporter", true);
+      if (!noOpen && openReporter && existsSync(REPORT_HTML)) {
         logger.info(`Rapport: ${REPORT_HTML}`);
-        openFile(REPORT_HTML);
+        await openFile(REPORT_HTML);
       }
 
       if (exitCode !== 0) {

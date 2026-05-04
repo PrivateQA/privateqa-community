@@ -37,7 +37,10 @@ function parseAlphaNumericPrefix(line: string): PrefixKey | undefined {
 function looksLikeTestStart(line: string) {
   const t = line.trim();
   if (!t) return false;
-  if (/^#{2,6}\s+/.test(t)) return true;
+  // Markdown standard headings: "# Title", "## Title", ...
+  if (/^#{1,6}\s+/.test(t)) return true;
+  // Relaxed compact headings often written in test plans: "#1", "#LOGIN", ...
+  if (/^#[^\s#]/.test(t)) return true;
   if (/^\s*(?:TC|TEST|CAS)\b/i.test(t)) return true;
   if (/^\s*Test\s*\d+\b/i.test(t)) return true;
   return false;
@@ -45,8 +48,10 @@ function looksLikeTestStart(line: string) {
 
 function titleFromLine(line: string) {
   const t = line.trim();
-  const heading = t.match(/^#{2,6}\s+(.+)$/);
+  const heading = t.match(/^#{1,6}\s+(.+)$/);
   if (heading) return normalizeTitle(heading[1]!);
+  const compactHeading = t.match(/^#([^\s].*)$/);
+  if (compactHeading) return normalizeTitle(compactHeading[1]!);
 
   const named = t.match(/^\s*(?:TC|TEST|CAS)\s*(?:DE\s+TEST)?\s*[:#-]\s*(.+)$/i);
   if (named) return normalizeTitle(named[1]!);

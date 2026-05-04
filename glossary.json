@@ -1,0 +1,19 @@
+{
+  "terms": {
+    "mail": {
+      "mapsTo": "contact",
+      "description": "Alias pour designer la page de contact.",
+      "uiHints": ["page de mail", "page mail", "contact page", "page de contact"]
+    },
+    "request demo": {
+      "mapsTo": "Request Demo",
+      "description": "Libelle bouton/menu menant au formulaire de contact.",
+      "uiHints": ["demander une demo entreprise", "request a demo"]
+    }
+  },
+  "actions": {
+    "ouvrir la page de mail": "Clique sur \"Request Demo\"",
+    "ouvrir la page de contact": "Clique sur \"Request Demo\"",
+    "verifier le formulaire de contact": "Verifie que \"Envoyez-nous un message\" est visible"
+  }
+}

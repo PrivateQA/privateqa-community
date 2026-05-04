@@ -1,4 +1,5 @@
 import { readFile, readdir, rm, stat, access } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { resolve, join, extname, relative } from "node:path";
 import { spawn } from "node:child_process";
 import { Router, json, text, sendFile, type RouteContext } from "./server.js";
@@ -8,8 +9,14 @@ import { compileToSpec } from "../agents/builder/builder.js";
 import { readJsonFile, writeJsonFile, writeTextFile } from "../utils/fs.js";
 import { extractTestCases, slugify } from "../utils/scenario.js";
 import type { MapFile } from "../infrastructure/store.js";
+import { applyGlossaryToMarkdown, type GlossaryFile } from "../utils/glossary.js";
 
 const OUTPUT_ROOT = process.env.TEST_OUTPUT_DIR ?? "test-output";
+const DEFAULT_GLOSSARY_CANDIDATES = [resolve(".privateqa", "glossary.json"), resolve("glossary.json")];
+
+function resolveDefaultGlossaryPath() {
+  return DEFAULT_GLOSSARY_CANDIDATES.find((p) => existsSync(p));
+}
 
 async function exists(p: string) {
   try {
@@ -104,6 +111,12 @@ export function registerRoutes(router: Router) {
       scenarioContent = scenario;
     }
 
+    const glossaryPath = resolveDefaultGlossaryPath();
+    if (glossaryPath && (await exists(glossaryPath))) {
+      const glossary = await readJsonFile<GlossaryFile>(glossaryPath);
+      scenarioContent = applyGlossaryToMarkdown(scenarioContent, glossary).content;
+    }
+
     ctx.logger.info(`Preprocess: ${scenarioPath} (noAI=${!!noAI})`);
 
     const pivot = await preprocessScenarioToPivot({
@@ -135,7 +148,12 @@ export function registerRoutes(router: Router) {
     }>(ctx, "scenario");
 
     const scenarioAbs = resolve(scenario);
-    const scenarioContent = await readFile(scenarioAbs, "utf8");
+    let scenarioContent = await readFile(scenarioAbs, "utf8");
+    const glossaryPath = resolveDefaultGlossaryPath();
+    if (glossaryPath && (await exists(glossaryPath))) {
+      const glossary = await readJsonFile<GlossaryFile>(glossaryPath);
+      scenarioContent = applyGlossaryToMarkdown(scenarioContent, glossary).content;
+    }
     const baseName = scenario.split(/[\\/]/).pop()!.replace(/\.\w+$/, "");
 
     ctx.logger.info(`Compile: ${scenarioAbs}`);
@@ -390,7 +408,12 @@ export function registerRoutes(router: Router) {
     // 2. Compile
     ctx.logger.info(`Pipeline [2/3] Compile: ${scenario}`);
     const scenarioAbs = resolve(scenario);
-    const scenarioContent = await readFile(scenarioAbs, "utf8");
+    let scenarioContent = await readFile(scenarioAbs, "utf8");
+    const glossaryPath = resolveDefaultGlossaryPath();
+    if (glossaryPath && (await exists(glossaryPath))) {
+      const glossary = await readJsonFile<GlossaryFile>(glossaryPath);
+      scenarioContent = applyGlossaryToMarkdown(scenarioContent, glossary).content;
+    }
     const baseName = scenario.split(/[\\/]/).pop()!.replace(/\.\w+$/, "");
     const map = await readJsonFile<MapFile>(defaultConfig.mapPath);
     const cases = extractTestCases(scenarioContent, baseName);

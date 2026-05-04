@@ -6,6 +6,12 @@ playwright-report/
 .privateqa/
 .fwkTest/
 enterprise/
+license-forge/
+license.key
+*.private.pem
+*.public.pem
+*.tar
+*.zip
 .env
 .env.local
 *.tgz
@@ -14,3 +20,4 @@ enterprise/
 COMMANDES.md
 explication.md
 scenario.md
+tests/generated/

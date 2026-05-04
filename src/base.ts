@@ -12,6 +12,12 @@ export type { QAPlugin, StepContext, StepInterceptorResult } from "./core/plugin
 
 const OUTPUT_ROOT = process.env.TEST_OUTPUT_DIR ?? "test-output";
 const MAX_HEAL_RETRIES = Number(process.env.PRIVATEQA_MAX_RETRIES ?? 1);
+const KEEP_TAB_BETWEEN_TESTS = (process.env.PRIVATEQA_KEEP_TAB ?? "true").toLowerCase() === "true";
+
+// En mode "keep tab", on réutilise la même page entre tests (même worker).
+// Avec PRIVATEQA_SINGLE_BROWSER=true (défaut), cela couvre toute l'exécution.
+let sharedContext: import("@playwright/test").BrowserContext | undefined;
+let sharedPage: Page | undefined;
 
 function safeName(input: string) {
   return input
@@ -105,30 +111,57 @@ async function attachError(testInfo: TestInfo, stepIndex: number, err: { message
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
 export const test = base.extend<{ _qaLogs: RuntimeLogs }>({
+  page: async ({ browser }, use) => {
+    if (!KEEP_TAB_BETWEEN_TESTS) {
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      try {
+        await use(page);
+      } finally {
+        await context.close();
+      }
+      return;
+    }
+
+    if (!sharedContext) sharedContext = await browser.newContext();
+    if (!sharedPage || sharedPage.isClosed()) sharedPage = await sharedContext.newPage();
+    await use(sharedPage);
+  },
   _qaLogs: async ({ page }, use, testInfo) => {
     const logs: RuntimeLogs = { console: [], pageErrors: [], requestFailed: [] };
 
-    page.on("console", (msg) => {
+    const onConsole = (msg: import("@playwright/test").ConsoleMessage) => {
       logs.console.push({
         type: msg.type(),
         text: msg.text(),
         location: msg.location()?.url,
       });
-    });
-    page.on("pageerror", (err) => logs.pageErrors.push({ message: String(err) }));
-    page.on("requestfailed", (req) => {
+    };
+    const onPageError = (err: Error) => logs.pageErrors.push({ message: String(err) });
+    const onRequestFailed = (req: import("@playwright/test").Request) => {
       logs.requestFailed.push({
         url: req.url(),
         method: req.method(),
         failure: req.failure()?.errorText,
       });
-    });
+    };
+
+    page.on("console", onConsole);
+    page.on("pageerror", onPageError);
+    page.on("requestfailed", onRequestFailed);
 
     for (const plugin of getPlugins()) {
       if (plugin.onTestBegin) await plugin.onTestBegin(page, testInfo);
     }
 
-    await use(logs);
+    try {
+      await use(logs);
+    } finally {
+      // Important quand la même page est réutilisée entre tests.
+      page.off("console", onConsole);
+      page.off("pageerror", onPageError);
+      page.off("requestfailed", onRequestFailed);
+    }
 
     for (const plugin of getPlugins()) {
       if (plugin.onTestEnd) await plugin.onTestEnd(page, testInfo);

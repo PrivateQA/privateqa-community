@@ -10,6 +10,18 @@ npm install privateqa-community
 
 That's it. Playwright and Chromium are installed automatically.
 
+This README documents the **Community** edition only.
+
+Looking for production-grade capabilities? See [privateqa.com](https://privateqa.com): Enterprise adds AI-powered local auto-healing for unstable selectors, secure Docker deployment, CI/CD integration, and WCAG accessibility reporting. The platform is designed for security-first teams, with execution in an isolated environment and controlled network exposure.
+
+### Try the bundled example scenario
+
+The npm package includes `scenarioExemple.md` so you can try the full pipeline immediately:
+
+```bash
+npx privateqa run scenarioExemple.md --headed
+```
+
 ## Quick start
 
 **1. Write a scenario** (`scenario.md`):
@@ -31,7 +43,7 @@ That's it. Playwright and Chromium are installed automatically.
 npx privateqa run scenario.md
 ```
 
-Done. privateqa maps the page, compiles the scenario to a Playwright spec, and executes the test — all in one command.
+Done. privateqa maps the page, compiles the scenario to a Playwright spec, and executes the test — all in one command. A detailed HTML report opens automatically after execution.
 
 ### Options
 
@@ -39,11 +51,14 @@ Done. privateqa maps the page, compiles the scenario to a Playwright spec, and e
 npx privateqa run scenario.md --headed        # see the browser
 npx privateqa run scenario.md --url <url>     # override the URL
 npx privateqa run scenario.md --no-map        # reuse existing DOM map
+npx privateqa run scenario.md --map-headed    # show browser during mapping only
+npx privateqa run scenario.md --glossary .privateqa/glossary.json  # apply business glossary
+npx privateqa run scenario.md --save          # save run in evolution history
+npx privateqa run scenario.md --reporter      # open report in Chromium at the end
+npx privateqa run scenario.md --no-open       # don't auto-open report
 ```
 
 ## Scenario syntax
-
-See [SYNTAX.md](./SYNTAX.md) for the full reference. Quick summary:
 
 | Step | Example |
 |------|---------|
@@ -52,8 +67,94 @@ See [SYNTAX.md](./SYNTAX.md) for the full reference. Quick summary:
 | Fill | `Remplis "Email" avec "user@test.com"` |
 | Select | `Sélectionne "France" dans "Country"` |
 | Assert | `Vérifie que "Welcome" est visible` |
-| Scroll | `Scroll jusqu'à "Footer"` |
+| Scroll to text | `Scroll jusqu'à "Footer"` |
+| Scroll to top | `Scroll en haut de la page` |
 | Wait | `J'attends 2s` |
+| Compound | `Scroll jusqu'à "Prix" et clique sur "Acheter"` |
+
+Targets and values are wrapped in quotes (`"…"`). Multiple test cases can be defined using headings (`#`, `##`, `#1`, `#LOGIN`) — each heading generates a separate `.spec.ts` file.
+
+By default, privateqa keeps the same browser tab/page between generated tests in the same run. This means you can chain segmented scenarios and avoid repeating `Ouvrir "https://..."` at the beginning of every section.
+
+Structured prefixes like `A.1:`, `TC-01:`, or `Action:` are automatically stripped, so you can write formal test plans and privateqa will parse them correctly.
+
+Full reference: [SYNTAX.md](https://github.com/PrivateQA/privateqa-community/blob/main/SYNTAX.md)
+
+## Business glossary (Community)
+
+If your teams use domain-specific wording (banking, insurance, medical, etc.), you can define a deterministic glossary and privateqa will rewrite those expressions before parsing steps.
+
+- Default paths (auto-applied): `.privateqa/glossary.json` then `glossary.json`
+- Custom path: `--glossary <path>`
+- Bundled example: `privateqa.glossary.example.json`
+
+Example format:
+
+```json
+{
+  "version": 1,
+  "terms": {
+    "FLC": {
+      "mapsTo": "Formulaire Liste de Conformite",
+      "uiHints": ["Formulaire FLC", "formulaire conformite"]
+    }
+  },
+  "actions": {
+    "valider dossier": "Clique sur \"Valider le dossier\""
+  }
+}
+```
+
+Concrete test on [privateqa.com](https://privateqa.com/):
+
+```json
+{
+  "version": 1,
+  "terms": {
+    "mail": {
+      "mapsTo": "contact",
+      "uiHints": ["page de mail", "page mail"]
+    },
+    "request demo": {
+      "mapsTo": "Request Demo",
+      "uiHints": ["demander une demo"]
+    }
+  },
+  "actions": {
+    "ouvrir la page de mail": "Clique sur \"Request Demo\"",
+    "verifier le formulaire de contact": "Verifie que \"Envoyez-nous un message\" est visible"
+  }
+}
+```
+
+Scenario using this glossary:
+
+```markdown
+- Ouvrir "https://privateqa.com/"
+- Ouvrir la page de mail
+- Verifier le formulaire de contact
+```
+
+How it works:
+- `terms`: replaces domain words/aliases with a canonical wording
+- `actions`: rewrites business shortcuts into explicit step lines
+- Replacement is text-based (deterministic), applied before step parsing
+
+Limits (Community):
+- No semantic inference: unknown terms are not guessed automatically
+- Replacements are lexical: keep glossary keys explicit and unambiguous
+- For advanced semantic interpretation, use Enterprise capabilities
+
+## Reports
+
+Every run generates a full HTML report with:
+
+- Per-step pass/fail status and duration
+- Screenshots at each step (success and failure)
+- Error details with Playwright call logs
+- Overall summary with charts
+
+Use `--save` to accumulate runs into an **evolution chart** that tracks your test health over time.
 
 ## Advanced: step-by-step commands
 
@@ -61,7 +162,7 @@ For more control, you can run each stage separately:
 
 ```bash
 npx privateqa map https://your-app.com          # 1. Map the DOM
-npx privateqa compile scenario.md                # 2. Generate .spec.ts
+npx privateqa compile scenario.md --glossary .privateqa/glossary.json  # 2. Generate .spec.ts
 npx privateqa run                                # 3. Run all generated tests
 ```
 
@@ -69,7 +170,7 @@ npx privateqa run                                # 3. Run all generated tests
 
 | Command | Description |
 |---------|-------------|
-| `privateqa run <scenario.md>` | **All-in-one**: map + compile + execute |
+| `privateqa run <scenario.md>` | **All-in-one**: map + compile + execute + report |
 | `privateqa run` | Execute already-generated tests |
 | `privateqa map <url>` | Crawl a URL and build a DOM map |
 | `privateqa compile <scenario.md>` | Generate Playwright spec(s) from a scenario |
@@ -79,7 +180,7 @@ npx privateqa run                                # 3. Run all generated tests
 
 ## Plugin system
 
-Extend privateqa with plugins to intercept step failures, add retry logic, or hook into the test lifecycle:
+privateqa exposes a plugin API to intercept step failures, add retry logic, or hook into the test lifecycle:
 
 ```typescript
 import { registerPlugin } from "privateqa-community";
@@ -115,11 +216,8 @@ registerPlugin(myPlugin);
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server for AI features |
-| `OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Embedding model |
-| `OLLAMA_GEN_MODEL` | `mistral` | Generation model |
-| `HEADLESS` | `true` | Run browser headless |
-| `PRIVATEQA_MAX_RETRIES` | `1` | Max plugin retry attempts per step |
+| `PRIVATEQA_SINGLE_BROWSER` | `true` | Run generated specs with one Playwright worker (single browser instance) |
+| `PRIVATEQA_KEEP_TAB` | `true` | Reuse the same Playwright page/tab across tests (same worker) |
 
 ## License
 

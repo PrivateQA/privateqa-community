@@ -37,6 +37,8 @@
     "privateqa.reporter.mjs",
     "templates",
     "README.md",
+    "scenarioExemple.md",
+    "privateqa.glossary.example.json",
     "SYNTAX.md",
     "LICENSE"
   ],

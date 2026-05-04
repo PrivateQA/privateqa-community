@@ -13,6 +13,7 @@ privateqa parses natural-language Markdown files and converts each line into a t
 ```
 
 - **Headings** (`#`, `##`, …) are used as test case titles. They are not parsed as steps.
+- Compact headings like `#1`, `#LOGIN` are also accepted.
 - **Bullet lines** (`-`, `*`, `1.`) are parsed as individual steps.
 - **Plain lines** (no bullet) are also accepted.
 - **Code blocks** (` ``` `) are skipped entirely.

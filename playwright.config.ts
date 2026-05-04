@@ -4,6 +4,7 @@ import { defineConfig } from "@playwright/test";
 const outputRoot = process.env.TEST_OUTPUT_DIR ?? "test-output";
 const headless = (process.env.HEADLESS ?? "true").toLowerCase() !== "false";
 const isHeaded = !headless;
+const singleBrowser = (process.env.PRIVATEQA_SINGLE_BROWSER ?? "true").toLowerCase() !== "false";
 
 // En mode headed, Playwright ouvre 1 navigateur par worker.
 // Si on laisse la valeur par défaut (CPU count), on obtient plusieurs fenêtres,
@@ -25,9 +26,10 @@ const testMatch = testPattern
 export default defineConfig({
   testDir: "./tests/generated",
   timeout: 30_000,
-  // Garder le parallélisme en headless, mais éviter la "fermeture/ouverture" de multiples fenêtres en headed.
-  fullyParallel: headless,
-  workers: workers ?? (isHeaded ? 1 : undefined),
+  // Mode "single browser" (par défaut): 1 worker pour garder une seule instance navigateur
+  // pour l'ensemble des specs générées à partir d'un scénario segmenté.
+  fullyParallel: singleBrowser ? false : headless,
+  workers: workers ?? (singleBrowser ? 1 : isHeaded ? 1 : undefined),
   testMatch,
   outputDir: `${outputRoot}/.playwright`,
   reporter: [["list"], ["./privateqa.reporter.mjs"]],
