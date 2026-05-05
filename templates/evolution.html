@@ -44,7 +44,7 @@
     .header-nav a svg { width: 14px; height: 14px; }
 
     /* ── Layout ────────────────────────────── */
-    .container { max-width: 1320px; margin: 0 auto; padding: 24px 32px 48px; }
+    .container { width: 100%; max-width: none; margin: 0 auto; padding: 24px clamp(16px, 2.2vw, 36px) 48px; }
 
     /* ── Cards ─────────────────────────────── */
     .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 28px; }
@@ -115,6 +115,40 @@
     }
     .rate-bar { height: 6px; border-radius: 3px; background: #e2e8f0; overflow: hidden; width: 80px; display: inline-block; vertical-align: middle; margin-left: 8px; }
     .rate-bar-fill { height: 100%; border-radius: 3px; }
+    .history-actions { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .btn {
+      border: 1px solid #d1d5db; background: #fff; color: #374151;
+      border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 600; cursor: pointer;
+    }
+    .btn:hover { background: #f8fafc; }
+    .btn-danger { border-color: #fecaca; color: #b91c1c; background: #fff5f5; }
+    .btn-danger:hover { background: #fee2e2; }
+    .icon-btn {
+      width: 30px; height: 30px; border-radius: 6px; border: 1px solid #d1d5db;
+      background: #fff; color: #475569; display: inline-flex; align-items: center; justify-content: center;
+      cursor: pointer; margin-right: 6px;
+    }
+    .icon-btn:hover { background: #f8fafc; }
+    .icon-btn svg { width: 14px; height: 14px; }
+    .icon-btn.delete { color: #b91c1c; border-color: #fecaca; background: #fff5f5; }
+    .icon-btn.delete:hover { background: #fee2e2; }
+    .manual-form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 12px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      background: #fafafa;
+    }
+    .manual-form input {
+      width: 100%;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 12px;
+    }
 
     /* ── Footer ────────────────────────────── */
     .footer { text-align: center; padding: 20px; font-size: 12px; color: #94a3b8; border-top: 1px solid #e2e8f0; margin-top: 16px; }
@@ -216,6 +250,22 @@
           <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
           Historique des runs
         </div>
+        <div class="history-actions">
+          <button class="btn" id="toggle-manual-form">Ajouter manuellement une ligne</button>
+          <button class="btn" id="reset-history-local">Reinitialiser les modifications locales</button>
+          <button class="btn" id="export-history-json">Exporter JSON</button>
+        </div>
+        <div class="manual-form" id="manual-form" style="display:none;">
+          <input id="run-date" type="datetime-local" />
+          <input id="run-version" type="text" placeholder="Version (optionnel)" />
+          <input id="run-tests" type="number" min="0" placeholder="Tests" />
+          <input id="run-passed" type="number" min="0" placeholder="Passed" />
+          <input id="run-failed" type="number" min="0" placeholder="Failed" />
+          <input id="run-steps-passed" type="number" min="0" placeholder="Etapes passed" />
+          <input id="run-steps-failed" type="number" min="0" placeholder="Etapes failed" />
+          <input id="run-duration-ms" type="number" min="0" placeholder="Duree (ms)" />
+          <button class="btn" id="add-run-btn" type="button">Ajouter</button>
+        </div>
         <div style="overflow-x:auto;">
           <table class="history-table" id="history-table">
             <thead>
@@ -228,6 +278,7 @@
                 <th>Taux</th>
                 <th>Etapes</th>
                 <th>Duree</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="history-tbody"></tbody>
@@ -265,6 +316,19 @@ function formatDateTime(iso) {
 function shortLabel(iso) {
   var d = new Date(iso);
   return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+}
+
+var HISTORY_STORAGE_KEY = 'privateqa.evolution.history.local';
+var currentRuns = [];
+var chartRefs = [];
+var editingRunId = null;
+var SVG_EDIT = '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 010 2.828l-8.5 8.5a2 2 0 01-.878.51l-3 1a1 1 0 01-1.264-1.264l1-3a2 2 0 01.51-.878l8.5-8.5a2 2 0 012.828 0z"/><path d="M15 7l-2-2" /></svg>';
+var SVG_DELETE = '<svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M6 7a1 1 0 012 0v7a1 1 0 11-2 0V7zm6 0a1 1 0 10-2 0v7a1 1 0 102 0V7z" clip-rule="evenodd"/><path fill-rule="evenodd" d="M4 5a1 1 0 011-1h2.382a1 1 0 00.894-.553l.447-.894A1 1 0 019.618 2h.764a1 1 0 01.894.553l.447.894A1 1 0 0012.618 4H15a1 1 0 011 1v1H4V5zm1 3a1 1 0 011-1h8a1 1 0 011 1v8a2 2 0 01-2 2H7a2 2 0 01-2-2V8z" clip-rule="evenodd"/></svg>';
+
+function sortRunsDesc(runs) {
+  return runs.slice().sort(function(a, b) {
+    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  });
 }
 
 // ── Chart defaults ────────────────────────────────────
@@ -332,6 +396,14 @@ async function loadEvolution() {
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       data = await resp.json();
     }
+    try {
+      var localData = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (localData) {
+        data = JSON.parse(localData);
+      }
+    } catch (_) {
+      // ignore local storage errors
+    }
     if (!Array.isArray(data) || data.length === 0) {
       document.getElementById('loading').style.display = 'none';
       document.getElementById('report').style.display = 'block';
@@ -339,7 +411,8 @@ async function loadEvolution() {
         '<div class="empty-state"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg><p>Aucun historique disponible.</p><p style="font-size:13px;margin-top:8px;">Lancez au moins un run de tests pour voir les donnees.</p></div>';
       return;
     }
-    render(data);
+    currentRuns = sortRunsDesc(data);
+    render(currentRuns);
   } catch (err) {
     document.getElementById('loading').style.display = 'none';
     document.getElementById('error-state').style.display = 'block';
@@ -348,15 +421,21 @@ async function loadEvolution() {
 }
 
 function render(runs) {
+  runs = sortRunsDesc(runs);
+  currentRuns = runs;
+  chartRefs.forEach(function(c) {
+    try { c.destroy(); } catch (_) {}
+  });
+  chartRefs = [];
   document.getElementById('loading').style.display = 'none';
   document.getElementById('report').style.display = 'block';
 
   var totalRuns = runs.length;
-  var latest = runs[totalRuns - 1];
-  var prev = totalRuns > 1 ? runs[totalRuns - 2] : null;
+  var latest = runs[0];
+  var prev = totalRuns > 1 ? runs[1] : null;
 
   // ── Header meta ──
-  var firstDate = formatDate(runs[0].date);
+  var firstDate = formatDate(runs[totalRuns - 1].date);
   var lastDate = formatDate(latest.date);
   document.getElementById('header-meta').innerHTML =
     '<span><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>' + totalRuns + ' run' + (totalRuns > 1 ? 's' : '') + ' enregistre' + (totalRuns > 1 ? 's' : '') + '</span>' +
@@ -440,7 +519,7 @@ function render(runs) {
     return r.totals.tests > 0 ? Math.round((r.totals.passed / r.totals.tests) * 100) : 0;
   });
 
-  new Chart(document.getElementById('passRateChart'), {
+  chartRefs.push(new Chart(document.getElementById('passRateChart'), {
     type: 'line',
     data: {
       labels: labels,
@@ -467,10 +546,10 @@ function render(runs) {
         })
       })
     })
-  });
+  }));
 
   // ── Tests Chart (stacked bar) ──
-  new Chart(document.getElementById('testsChart'), {
+  chartRefs.push(new Chart(document.getElementById('testsChart'), {
     type: 'bar',
     data: {
       labels: labels,
@@ -501,10 +580,10 @@ function render(runs) {
         y: Object.assign({}, chartDefaults.scales.y, { stacked: true }),
       })
     })
-  });
+  }));
 
   // ── Duration Chart ──
-  new Chart(document.getElementById('durationChart'), {
+  chartRefs.push(new Chart(document.getElementById('durationChart'), {
     type: 'line',
     data: {
       labels: labels,
@@ -528,14 +607,14 @@ function render(runs) {
         })
       })
     })
-  });
+  }));
 
   // ── Steps Rate Chart ──
   var stepsRates = runs.map(function(r) {
     return r.totals.steps > 0 ? Math.round((r.totals.stepsPassed / r.totals.steps) * 100) : 0;
   });
 
-  new Chart(document.getElementById('stepsRateChart'), {
+  chartRefs.push(new Chart(document.getElementById('stepsRateChart'), {
     type: 'line',
     data: {
       labels: labels,
@@ -562,15 +641,15 @@ function render(runs) {
         })
       })
     })
-  });
+  }));
 
   // ── History table (most recent first) ──
   var tbody = document.getElementById('history-tbody');
-  var reversed = runs.slice().reverse();
-  tbody.innerHTML = reversed.map(function(r) {
+  tbody.innerHTML = runs.map(function(r) {
     var rate = r.totals.tests > 0 ? Math.round((r.totals.passed / r.totals.tests) * 100) : 0;
     var rateColor = rate === 100 ? '#22c55e' : rate >= 80 ? '#f59e0b' : '#ef4444';
     var stepsRate = r.totals.steps > 0 ? Math.round((r.totals.stepsPassed / r.totals.steps) * 100) : 0;
+    var runId = encodeURIComponent(String(r.date || '') + '|' + String(r.version || ''));
     return '<tr>' +
       '<td style="white-space:nowrap;">' + formatDateTime(r.date) + '</td>' +
       '<td>' + (r.version ? '<span class="version-cell">' + r.version + '</span>' : '<span style="color:#cbd5e1">&mdash;</span>') + '</td>' +
@@ -580,12 +659,140 @@ function render(runs) {
       '<td><span style="font-weight:600;color:' + rateColor + '">' + rate + '%</span><span class="rate-bar"><span class="rate-bar-fill" style="width:' + rate + '%;background:' + rateColor + '"></span></span></td>' +
       '<td>' + stepsRate + '% <span style="color:#94a3b8">(' + r.totals.stepsPassed + '/' + r.totals.steps + ')</span></td>' +
       '<td style="white-space:nowrap;">' + formatDuration(r.durationMs) + '</td>' +
+      '<td>' +
+        '<button class="icon-btn edit-run-btn" title="Modifier" data-run-id="' + runId + '">' + SVG_EDIT + '</button>' +
+        '<button class="icon-btn delete delete-run-btn" title="Supprimer" data-run-id="' + runId + '">' + SVG_DELETE + '</button>' +
+      '</td>' +
     '</tr>';
   }).join('');
 
   // ── Footer ──
   document.getElementById('footer').innerHTML = 'Historique de ' + totalRuns + ' run' + (totalRuns > 1 ? 's' : '') + ' &mdash; fwkTest';
 }
+
+function persistCurrentRuns() {
+  try {
+    localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(currentRuns));
+  } catch (_) {
+    // ignore storage errors
+  }
+}
+
+function readNumber(id) {
+  var v = Number(document.getElementById(id).value || 0);
+  return Number.isFinite(v) && v >= 0 ? v : 0;
+}
+
+document.getElementById('toggle-manual-form').addEventListener('click', function() {
+  var f = document.getElementById('manual-form');
+  f.style.display = f.style.display === 'none' ? 'grid' : 'none';
+});
+
+document.getElementById('add-run-btn').addEventListener('click', function() {
+  var iso = document.getElementById('run-date').value;
+  if (!iso) {
+    alert('Veuillez renseigner une date.');
+    return;
+  }
+  var tests = readNumber('run-tests');
+  var passed = readNumber('run-passed');
+  var failed = readNumber('run-failed');
+  var stepsPassed = readNumber('run-steps-passed');
+  var stepsFailed = readNumber('run-steps-failed');
+  var durationMs = readNumber('run-duration-ms');
+  var skipped = Math.max(0, tests - passed - failed);
+  var run = {
+    date: new Date(iso).toISOString(),
+    version: (document.getElementById('run-version').value || '').trim() || null,
+    totals: {
+      tests: tests,
+      passed: passed,
+      failed: failed,
+      skipped: skipped,
+      timedOut: 0,
+      steps: stepsPassed + stepsFailed,
+      stepsPassed: stepsPassed,
+      stepsFailed: stepsFailed
+    },
+    durationMs: durationMs
+  };
+  if (editingRunId) {
+    currentRuns = currentRuns.map(function(r) {
+      var id = String(r.date || '') + '|' + String(r.version || '');
+      return id === editingRunId ? run : r;
+    });
+    editingRunId = null;
+    this.textContent = 'Ajouter';
+  } else {
+    currentRuns.push(run);
+  }
+  currentRuns = sortRunsDesc(currentRuns);
+  persistCurrentRuns();
+  render(currentRuns);
+  document.getElementById('manual-form').style.display = 'none';
+});
+
+document.getElementById('history-tbody').addEventListener('click', function(e) {
+  var target = e.target;
+  if (!(target instanceof HTMLElement)) return;
+  if (target.classList.contains('edit-run-btn')) {
+    var editId = decodeURIComponent(target.getAttribute('data-run-id') || '');
+    var runToEdit = currentRuns.find(function(r) {
+      return (String(r.date || '') + '|' + String(r.version || '')) === editId;
+    });
+    if (!runToEdit) return;
+    editingRunId = editId;
+    var localDate = new Date(runToEdit.date);
+    localDate.setMinutes(localDate.getMinutes() - localDate.getTimezoneOffset());
+    document.getElementById('run-date').value = localDate.toISOString().slice(0, 16);
+    document.getElementById('run-version').value = runToEdit.version || '';
+    document.getElementById('run-tests').value = String(runToEdit.totals.tests || 0);
+    document.getElementById('run-passed').value = String(runToEdit.totals.passed || 0);
+    document.getElementById('run-failed').value = String(runToEdit.totals.failed || 0);
+    document.getElementById('run-steps-passed').value = String(runToEdit.totals.stepsPassed || 0);
+    document.getElementById('run-steps-failed').value = String(runToEdit.totals.stepsFailed || 0);
+    document.getElementById('run-duration-ms').value = String(runToEdit.durationMs || 0);
+    document.getElementById('manual-form').style.display = 'grid';
+    document.getElementById('add-run-btn').textContent = 'Modifier';
+    return;
+  }
+  if (!target.classList.contains('delete-run-btn')) return;
+  var runId = decodeURIComponent(target.getAttribute('data-run-id') || '');
+  if (!runId) return;
+  if (!confirm("Action definitive. Etes-vous sur de vouloir supprimer cette ligne de l'historique ?")) {
+    return;
+  }
+  currentRuns = currentRuns.filter(function(r) {
+    return (String(r.date || '') + '|' + String(r.version || '')) !== runId;
+  });
+  persistCurrentRuns();
+  render(currentRuns);
+});
+
+document.getElementById('reset-history-local').addEventListener('click', function() {
+  if (!confirm("Action definitive. Etes-vous sur de vouloir supprimer vos modifications locales de l'historique ?")) {
+    return;
+  }
+  try {
+    localStorage.removeItem(HISTORY_STORAGE_KEY);
+  } catch (_) {
+    // ignore
+  }
+  editingRunId = null;
+  location.reload();
+});
+
+document.getElementById('export-history-json').addEventListener('click', function() {
+  var blob = new Blob([JSON.stringify(sortRunsDesc(currentRuns), null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'history.export.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+});
 
 loadEvolution();
 </script>

@@ -1,6 +1,6 @@
 # privateqa
 
-Write end-to-end tests in plain language, run them with Playwright — zero config.
+Write end-to-end tests in plain language (French or English), run them with Playwright — zero config.
 
 ## Install
 
@@ -21,6 +21,9 @@ The npm package includes `scenarioExemple.md` so you can try the full pipeline i
 ```bash
 npx privateqa run scenarioExemple.md --headed
 ```
+
+If you installed via npm, these example files are located in `node_modules/privateqa-community/`.
+Copy `scenarioExemple.md` and `glossary.json` to your project root before running them directly.
 
 ## Quick start
 
@@ -56,9 +59,12 @@ npx privateqa run scenario.md --glossary .privateqa/glossary.json  # apply busin
 npx privateqa run scenario.md --save          # save run in evolution history
 npx privateqa run scenario.md --reporter      # open report in Chromium at the end
 npx privateqa run scenario.md --no-open       # don't auto-open report
+npx privateqa run scenario.md --no-validate   # skip pre-run scenario validation
 ```
 
 ## Scenario syntax
+
+You can write scenarios in **French or English**. Both are supported by the parser for the same core actions (navigate, click, fill, select, assert, wait, scroll).
 
 | Step | Example |
 |------|---------|
@@ -86,7 +92,7 @@ If your teams use domain-specific wording (banking, insurance, medical, etc.), y
 
 - Default paths (auto-applied): `.privateqa/glossary.json` then `glossary.json`
 - Custom path: `--glossary <path>`
-- Bundled example: `privateqa.glossary.example.json`
+- Bundled default glossary: `glossary.json`
 
 Example format:
 
@@ -145,6 +151,16 @@ Limits (Community):
 - Replacements are lexical: keep glossary keys explicit and unambiguous
 - For advanced semantic interpretation, use Enterprise capabilities
 
+## Validate before run
+
+`run` now validates the scenario before compile/execute (after glossary replacement).
+If unknown steps are detected, the run stops early with explicit feedback.
+
+```bash
+npx privateqa validate scenario.md
+npx privateqa validate scenario.md --allow-unknown
+```
+
 ## Reports
 
 Every run generates a full HTML report with:
@@ -171,6 +187,7 @@ npx privateqa run                                # 3. Run all generated tests
 | Command | Description |
 |---------|-------------|
 | `privateqa run <scenario.md>` | **All-in-one**: map + compile + execute + report |
+| `privateqa validate <scenario.md>` | Validate parsed steps and fail on unknown lines |
 | `privateqa run` | Execute already-generated tests |
 | `privateqa map <url>` | Crawl a URL and build a DOM map |
 | `privateqa compile <scenario.md>` | Generate Playwright spec(s) from a scenario |

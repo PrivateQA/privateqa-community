@@ -12,8 +12,14 @@ const LOCATOR_ERROR_PATTERNS = [
   "element is outside of the viewport",
 ] as const;
 
+const ANSI_ESCAPE_REGEX = new RegExp(String.raw`\x1B\[[0-9;]*[ -/]*[@-~]`, "g");
+
+export function stripAnsi(input: string): string {
+  return input.replace(ANSI_ESCAPE_REGEX, "");
+}
+
 export function isLocatorError(error: Error): boolean {
-  const msg = error.message.toLowerCase();
+  const msg = stripAnsi(error.message).toLowerCase();
   return LOCATOR_ERROR_PATTERNS.some((p) => msg.includes(p));
 }
 
@@ -41,7 +47,8 @@ export function enrichErrorMessage(error: unknown): Error {
   const original = error instanceof Error ? error : new Error(String(error));
   if (!isLocatorError(original)) return original;
 
-  const enriched = new Error(original.message + COMMUNITY_BANNER);
+  const cleanedMessage = stripAnsi(original.message);
+  const enriched = new Error(cleanedMessage + COMMUNITY_BANNER);
   enriched.stack = original.stack;
   enriched.name = original.name;
   return enriched;

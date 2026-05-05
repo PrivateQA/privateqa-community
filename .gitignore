@@ -15,6 +15,8 @@ license.key
 .env
 .env.local
 *.tgz
+license.key
+public-key.pem
 
 # Internal dev docs (not published)
 COMMANDES.md

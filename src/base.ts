@@ -1,11 +1,11 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, test as base } from "@playwright/test";
 import type { Page, TestInfo } from "@playwright/test";
 
 import { getPlugins } from "./core/plugin.js";
 import type { StepContext } from "./core/plugin.js";
-import { enrichErrorMessage, isLocatorError } from "./core/errors.js";
+import { enrichErrorMessage, isLocatorError, stripAnsi } from "./core/errors.js";
 
 export { registerPlugin, clearPlugins, getPlugins } from "./core/plugin.js";
 export type { QAPlugin, StepContext, StepInterceptorResult } from "./core/plugin.js";
@@ -13,6 +13,8 @@ export type { QAPlugin, StepContext, StepInterceptorResult } from "./core/plugin
 const OUTPUT_ROOT = process.env.TEST_OUTPUT_DIR ?? "test-output";
 const MAX_HEAL_RETRIES = Number(process.env.PRIVATEQA_MAX_RETRIES ?? 1);
 const KEEP_TAB_BETWEEN_TESTS = (process.env.PRIVATEQA_KEEP_TAB ?? "true").toLowerCase() === "true";
+const DEBUG_HEAL = (process.env.PRIVATEQA_DEBUG_HEAL ?? "false").toLowerCase() === "true";
+const HEAL_DEBUG_LOG_PATH = path.join(OUTPUT_ROOT, "logs", "heal-debug.log");
 
 // En mode "keep tab", on réutilise la même page entre tests (même worker).
 // Avec PRIVATEQA_SINGLE_BROWSER=true (défaut), cela couvre toute l'exécution.
@@ -33,6 +35,14 @@ async function ensureDir(p: string) {
   await mkdir(p, { recursive: true });
 }
 
+async function debugLog(testInfo: TestInfo, message: string) {
+  if (!DEBUG_HEAL) return;
+  const line = `${new Date().toISOString()} [${testInfo.title}] ${message}`;
+  const logsDir = path.join(OUTPUT_ROOT, "logs");
+  await ensureDir(logsDir);
+  await appendFile(HEAL_DEBUG_LOG_PATH, `${line}\n`, "utf8");
+}
+
 function screenshotPath(testInfo: TestInfo, kind: "success" | "failed", suffix?: string) {
   const fileBase = safeName(testInfo.title) || "test";
   const file = suffix ? `${fileBase}-${suffix}.png` : `${fileBase}.png`;
@@ -50,6 +60,7 @@ type RuntimeLogs = {
   console: Array<{ type: string; text: string; location?: string }>;
   pageErrors: Array<{ message: string }>;
   requestFailed: Array<{ url: string; method: string; failure?: string }>;
+  debug: string[];
 };
 
 export type StepResult = {
@@ -75,8 +86,8 @@ function getSteps(testInfo: TestInfo): StepResult[] {
 // ── Helpers internes ────────────────────────────────────────────────────────
 
 function toErrorObj(e: unknown): { message: string; stack?: string } {
-  if (e instanceof Error) return { message: e.message, stack: e.stack };
-  return { message: String(e) };
+  if (e instanceof Error) return { message: stripAnsi(e.message), stack: e.stack };
+  return { message: stripAnsi(String(e)) };
 }
 
 async function safeScreenshot(
@@ -128,7 +139,7 @@ export const test = base.extend<{ _qaLogs: RuntimeLogs }>({
     await use(sharedPage);
   },
   _qaLogs: async ({ page }, use, testInfo) => {
-    const logs: RuntimeLogs = { console: [], pageErrors: [], requestFailed: [] };
+    const logs: RuntimeLogs = { console: [], pageErrors: [], requestFailed: [], debug: [] };
 
     const onConsole = (msg: import("@playwright/test").ConsoleMessage) => {
       logs.console.push({
@@ -152,6 +163,12 @@ export const test = base.extend<{ _qaLogs: RuntimeLogs }>({
 
     for (const plugin of getPlugins()) {
       if (plugin.onTestBegin) await plugin.onTestBegin(page, testInfo);
+    }
+    if (DEBUG_HEAL) {
+      const pluginNames = getPlugins().map((p) => p.name).join(", ") || "(none)";
+      const line = `[qa-debug] test-begin title="${testInfo.title}" plugins=${pluginNames} maxRetries=${MAX_HEAL_RETRIES}`;
+      logs.debug.push(line);
+      await debugLog(testInfo, line);
     }
 
     try {
@@ -272,6 +289,18 @@ export async function qaStep(
         const errorObj = toErrorObj(e);
 
         const realError = e instanceof Error ? e : new Error(String(e));
+        if (DEBUG_HEAL) {
+          const isLoc = isLocatorError(realError);
+          const pluginNames = plugins.map((p) => p.name).join(", ") || "(none)";
+          const entry =
+            `[qa-debug] step-failure index=${stepIndex} attempt=${attempt} locatorError=${isLoc} ` +
+            `plugins=${pluginNames} message="${stripAnsi(realError.message).slice(0, 300)}"`;
+          await debugLog(testInfo, entry);
+          await testInfo.attach(`qa-debug-step-${stepIndex}-${attempt}`, {
+            body: Buffer.from(entry),
+            contentType: "text/plain",
+          });
+        }
         if (plugins.length === 0 || !isLocatorError(realError)) {
           const enriched = enrichErrorMessage(e);
           await attachError(testInfo, stepIndex, toErrorObj(enriched));
@@ -300,13 +329,34 @@ export async function qaStep(
         for (const plugin of plugins) {
           if (!plugin.onStepFailure) continue;
           const result = await plugin.onStepFailure(ctx);
+          if (DEBUG_HEAL) {
+            const summary =
+              `[qa-debug] plugin-result plugin=${plugin.name} step=${stepIndex} attempt=${attempt} ` +
+              `action=${result.action}`;
+            await debugLog(testInfo, summary);
+            await testInfo.attach(`qa-debug-plugin-${stepIndex}-${attempt}-${plugin.name}`, {
+              body: Buffer.from(summary),
+              contentType: "text/plain",
+            });
+          }
 
           if (result.action === "retry" && attempt < MAX_HEAL_RETRIES) {
             currentFn = result.newFn ?? fn;
             intercepted = true;
+            if (DEBUG_HEAL) {
+              const retryLine = `[qa-debug] retry scheduled step=${stepIndex} nextAttempt=${attempt + 1}`;
+              await debugLog(testInfo, retryLine);
+              await testInfo.attach(`qa-debug-retry-${stepIndex}-${attempt}`, {
+                body: Buffer.from(retryLine),
+                contentType: "text/plain",
+              });
+            }
             break;
           }
           if (result.action === "skip") {
+            if (DEBUG_HEAL) {
+              await debugLog(testInfo, `[qa-debug] step skipped by plugin step=${stepIndex}`);
+            }
             steps.push({
               index: stepIndex,
               label,
@@ -319,6 +369,9 @@ export async function qaStep(
         }
 
         if (!intercepted) {
+          if (DEBUG_HEAL) {
+            await debugLog(testInfo, `[qa-debug] no plugin intercepted step=${stepIndex} -> fail`);
+          }
           await attachError(testInfo, stepIndex, errorObj);
           steps.push({
             index: stepIndex,

@@ -73,7 +73,7 @@
     .header-nav a svg { width: 14px; height: 14px; }
 
     /* ── Main layout ───────────────────────────────────────── */
-    .container { max-width: 1320px; margin: 0 auto; padding: 24px 32px 48px; }
+    .container { width: 100%; max-width: none; margin: 0 auto; padding: 24px clamp(16px, 2.2vw, 36px) 48px; }
 
     /* ── Summary cards ─────────────────────────────────────── */
     .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px; }
@@ -103,7 +103,7 @@
     .card-icon.amber { background: #fef3c7; color: #d97706; }
 
     /* ── Two-column layout ─────────────────────────────────── */
-    .content-grid { display: grid; grid-template-columns: 1fr 360px; gap: 24px; align-items: start; }
+    .content-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 24px; align-items: start; }
     @media (max-width: 960px) { .content-grid { grid-template-columns: 1fr; } }
     .sidebar { position: sticky; top: 24px; }
 

@@ -13,7 +13,7 @@ import { readJsonFile, writeJsonFile, writeTextFile } from "./utils/fs.js";
 import { createLogger, type LogLevel } from "./utils/logger.js";
 import type { MapFile } from "./infrastructure/store.js";
 import { extractTestCases, slugify } from "./utils/scenario.js";
-import { stepsFromMarkdown } from "./core/steps.js";
+import { parseStepsFromMarkdown, stepsFromMarkdown, toStep } from "./core/steps.js";
 import { applyGlossaryToMarkdown, type GlossaryFile } from "./utils/glossary.js";
 
 const __cliDir = dirname(fileURLToPath(import.meta.url));
@@ -80,6 +80,12 @@ function numFlag(args: Args, key: string, fallback: number) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function sanitizeRunTargets(targets: string[]) {
+  // En PowerShell, un `*` résiduel peut se retrouver en argument littéral et
+  // casser Playwright (regex interne invalide: /*/gi).
+  return targets.filter((t) => t.trim() !== "*");
+}
+
 async function openFile(filePath: string) {
   const abs = resolve(filePath);
   const fileUrl = pathToFileURL(abs).href;
@@ -96,6 +102,23 @@ async function openFile(filePath: string) {
   });
 }
 
+async function runPlaywrightWithPrivateqaReporter(
+  specsOrArgs: string[],
+  env: NodeJS.ProcessEnv,
+): Promise<number> {
+  const pwArgs = ["playwright", "test"];
+  if (existsSync(REPORTER_PATH)) {
+    pwArgs.push(`--reporter=list,${REPORTER_PATH}`);
+  }
+  pwArgs.push(...specsOrArgs);
+
+  const child = spawn("npx", pwArgs, { stdio: "inherit", shell: true, env });
+  return await new Promise<number>((res) => {
+    child.on("exit", (code) => res(code ?? 1));
+    child.on("error", () => res(1));
+  });
+}
+
 function resolveGlossaryPath(customPath?: string) {
   if (customPath) {
     const abs = resolve(customPath);
@@ -103,6 +126,18 @@ function resolveGlossaryPath(customPath?: string) {
   }
   const candidates = [resolve(".privateqa", "glossary.json"), resolve("glossary.json")];
   return candidates.find((p) => existsSync(p));
+}
+
+function validateScenarioContent(content: string) {
+  const rawSteps = parseStepsFromMarkdown(content);
+  const unknowns = rawSteps
+    .map((raw, i) => ({ index: i + 1, step: toStep(raw) }))
+    .filter((x) => x.step.kind === "unknown")
+    .map((x) => ({ index: x.index, raw: x.step.raw }));
+  return {
+    total: rawSteps.length,
+    unknowns,
+  };
 }
 
 function ensureBrowser(logger: ReturnType<typeof createLogger>) {
@@ -121,8 +156,9 @@ function help() {
 privateqa — Natural-language scenario → Playwright tests
 
 Usage:
-  privateqa run <scenario.md> [--url <url>] [--headed] [--no-map] [--no-embeddings] [--save] [--reporter] [--no-open]
+  privateqa run <scenario.md> [--url <url>] [--headed] [--no-map] [--no-embeddings] [--save] [--reporter] [--no-open] [--no-validate]
   privateqa run [--headed|--headless] [args...]
+  privateqa run-generated [tests/generated[/...]] [--headed|--headless] [--reporter] [--no-open]
 
 All-in-one (recommended):
   npx privateqa run scenario.md                 Map + compile + execute in one go
@@ -134,14 +170,17 @@ All-in-one (recommended):
   npx privateqa run scenario.md --save          Save this run in the evolution history
   npx privateqa run scenario.md --reporter      Open report in Chromium at the end
   npx privateqa run scenario.md --no-open       Don't auto-open report in browser
+  npx privateqa run scenario.md --no-validate   Skip scenario validation before compile
 
 Step-by-step:
   privateqa map <url> [--out .privateqa/map.json] [--no-embeddings] [--max 200] [--headed]
   privateqa compile <scenario.md> [--map .privateqa/map.json] [--out <file.spec.ts|dir>] [--base-import <path>] [--glossary <path>]
   privateqa run [--headed|--headless]
+  privateqa run-generated                     Exécute uniquement tests/generated avec le reporter privateqa
 
 Other:
   privateqa preprocess <scenario.md> [--out .privateqa/pivot.json] [--ollama ...] [--model mistral] [--no-ai] [--glossary <path>]
+  privateqa validate <scenario.md> [--glossary <path>] [--allow-unknown]
   privateqa report [--input test-output/summary.json] [--out test-output/report.html]
   privateqa evolution [--history .privateqa/history.json] [--out test-output/evolution.html]
   privateqa api [--port 3000]
@@ -354,6 +393,52 @@ async function main() {
     return new Promise(() => {}); // block forever
   }
 
+  if (cmd === "validate") {
+    const scenarioPath = args._[1] ?? strFlag(args, "scenario");
+    if (!scenarioPath) throw new Error("validate: scénario manquant. Ex: privateqa validate scenario.md");
+
+    const scenarioAbs = resolve(scenarioPath);
+    logger.info(`Validation scénario: ${scenarioAbs}`);
+    let scenarioContent = await readFile(scenarioAbs, "utf8");
+
+    const glossaryPath = resolveGlossaryPath(strFlag(args, "glossary"));
+    if (glossaryPath) {
+      const glossary = await readJsonFile<GlossaryFile>(glossaryPath);
+      const applied = applyGlossaryToMarkdown(scenarioContent, glossary);
+      scenarioContent = applied.content;
+      logger.info(
+        `Glossaire appliqué: ${glossaryPath} (${applied.replacements.reduce((a, b) => a + b.count, 0)} remplacements)`,
+      );
+    }
+
+    const report = validateScenarioContent(scenarioContent);
+    if (report.total === 0) {
+      throw new Error("Validation échouée: aucun step détecté dans le scénario.");
+    }
+
+    if (report.unknowns.length === 0) {
+      logger.info(`Validation OK: ${report.total} step(s), 0 unknown.`);
+      return;
+    }
+
+    logger.warn(
+      `Validation: ${report.total} step(s), ${report.unknowns.length} unknown détecté(s).`,
+    );
+    for (const u of report.unknowns.slice(0, 20)) {
+      console.warn(`  [${u.index}] ${u.raw}`);
+    }
+    if (report.unknowns.length > 20) {
+      console.warn(`  ... ${report.unknowns.length - 20} autre(s) step(s) unknown`);
+    }
+
+    if (!boolFlag(args, "allow-unknown", false)) {
+      throw new Error(
+        "Validation échouée: des steps unknown sont présents. Corrigez le scénario ou relancez avec --allow-unknown.",
+      );
+    }
+    return;
+  }
+
   if (cmd === "run") {
     const raw = process.argv.slice(3);
     const runArgs = parseArgs(raw);
@@ -399,6 +484,24 @@ async function main() {
             `Glossaire appliqué: ${glossaryPath} (${applied.replacements.reduce((a, b) => a + b.count, 0)} remplacements)`,
           );
         }
+      }
+
+      if (!boolFlag(runArgs, "no-validate", false)) {
+        const validation = validateScenarioContent(scenarioContent);
+        if (validation.total === 0) {
+          throw new Error("Validation échouée: aucun step détecté dans le scénario.");
+        }
+        if (validation.unknowns.length > 0) {
+          const preview = validation.unknowns
+            .slice(0, 5)
+            .map((u) => `[${u.index}] ${u.raw}`)
+            .join(" | ");
+          throw new Error(
+            `Validation échouée: ${validation.unknowns.length} step(s) unknown. ${preview}. ` +
+              `Corrigez le scénario ou utilisez --no-validate pour ignorer ce contrôle.`,
+          );
+        }
+        logger.info(`Validation scénario: OK (${validation.total} step(s), 0 unknown).`);
       }
 
       const steps = stepsFromMarkdown(scenarioContent);
@@ -511,18 +614,7 @@ async function main() {
       logger.info("[3/3] Exécution des tests...");
       const relPaths = specFiles.map((f) => relative(process.cwd(), f).replace(/\\/g, "/"));
       const noOpen = boolFlag(runArgs, "no-open", false);
-
-      const pwArgs = ["playwright", "test"];
-      if (existsSync(REPORTER_PATH)) {
-        pwArgs.push(`--reporter=list,${REPORTER_PATH}`);
-      }
-      pwArgs.push(...relPaths);
-
-      const child = spawn("npx", pwArgs, { stdio: "inherit", shell: true, env });
-      const exitCode = await new Promise<number>((res) => {
-        child.on("exit", (code) => res(code ?? 1));
-        child.on("error", () => res(1));
-      });
+      const exitCode = await runPlaywrightWithPrivateqaReporter(relPaths, env);
 
       // Ouvre le rapport par défaut (sauf --no-open).
       // --reporter est conservé pour compatibilité/explicitation.
@@ -548,6 +640,43 @@ async function main() {
         );
         child.on("error", rej);
       });
+    }
+    return;
+  }
+
+  if (cmd === "run-generated") {
+    const runArgs = parseArgs(process.argv.slice(3));
+    const headed = boolFlag(runArgs, "headed", false);
+    const headless = boolFlag(runArgs, "headless", false);
+    const noOpen = boolFlag(runArgs, "no-open", false);
+    const openReporter = boolFlag(runArgs, "reporter", true);
+
+    const env = { ...process.env };
+    env.HEADLESS = "true";
+    if (headed) env.HEADLESS = "false";
+    if (headless) env.HEADLESS = "true";
+
+    ensureBrowser(logger);
+
+    // Par défaut, cible le dossier généré; sinon accepte un fichier/dossier passé en argument.
+    const targetsRaw = runArgs._.length > 0 ? runArgs._ : [defaultConfig.generatedTestsDir];
+    const targets = sanitizeRunTargets(targetsRaw);
+    if (targets.length === 0) {
+      throw new Error(
+        "Aucune cible de test valide après filtrage des wildcards. Retirez l'argument `*`.",
+      );
+    }
+    logger.info(`Exécution des tests générés: ${targets.join(", ")}`);
+
+    const exitCode = await runPlaywrightWithPrivateqaReporter(targets, env);
+
+    if (!noOpen && openReporter && existsSync(REPORT_HTML)) {
+      logger.info(`Rapport: ${REPORT_HTML}`);
+      await openFile(REPORT_HTML);
+    }
+
+    if (exitCode !== 0) {
+      throw new Error(`Tests terminés avec le code ${exitCode}`);
     }
     return;
   }

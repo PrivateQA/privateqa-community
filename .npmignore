@@ -19,6 +19,8 @@ test-output/
 test-results/
 playwright-report/
 scenario.md
+license.key
+public-key.pem
 
 # Docs internes
 explication.md

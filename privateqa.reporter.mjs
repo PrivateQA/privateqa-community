@@ -18,7 +18,12 @@ async function resetDirSafe(dir) {
   if (!abs.startsWith(cwd + path.sep) && abs !== cwd) {
     throw new Error(`Refus de supprimer un dossier hors workspace: "${abs}"`);
   }
-  await rm(abs, { recursive: true, force: true });
+  try {
+    await rm(abs, { recursive: true, force: true });
+  } catch {
+    // Sous Windows, des handles temporaires peuvent empêcher un clean complet.
+    // On continue: le reporter écrasera les fichiers nécessaires ensuite.
+  }
 }
 
 function safeName(input) {
@@ -193,6 +198,7 @@ export default class PrivateQAReporter {
       generatedAt: new Date().toISOString(),
     };
 
+    await ensureDir(path.dirname(this.summaryPath));
     await writeFile(this.summaryPath, JSON.stringify(summary, null, 2), "utf8");
 
     // ── summary.md ──────────────────────────────────────────────────────────
@@ -250,6 +256,7 @@ export default class PrivateQAReporter {
       }
     }
 
+    await ensureDir(path.dirname(this.summaryMdPath));
     await writeFile(this.summaryMdPath, md.join("\n"), "utf8");
 
     // ── report.html ─────────────────────────────────────────────────────────
