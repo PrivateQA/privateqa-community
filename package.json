@@ -1,6 +1,6 @@
 {
   "name": "privateqa-community",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "description": "Write tests in natural language, run them with Playwright. Plugin-extensible.",
   "license": "MIT",
