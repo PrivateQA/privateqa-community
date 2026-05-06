@@ -43,6 +43,10 @@ async function debugLog(testInfo: TestInfo, message: string) {
   await appendFile(HEAL_DEBUG_LOG_PATH, `${line}\n`, "utf8");
 }
 
+function isWcagEnabled() {
+  return ["1", "true", "yes", "on"].includes((process.env.PRIVATEQA_WCAG ?? "false").toLowerCase());
+}
+
 function screenshotPath(testInfo: TestInfo, kind: "success" | "failed", suffix?: string) {
   const fileBase = safeName(testInfo.title) || "test";
   const file = suffix ? `${fileBase}-${suffix}.png` : `${fileBase}.png`;
@@ -61,6 +65,29 @@ type RuntimeLogs = {
   pageErrors: Array<{ message: string }>;
   requestFailed: Array<{ url: string; method: string; failure?: string }>;
   debug: string[];
+};
+
+type WcagViolation = {
+  id: string;
+  impact: string;
+  description: string;
+  help: string;
+  helpUrl: string;
+  nodes: number;
+  wcagTags: string[];
+};
+
+type WcagSummary = {
+  enabled: boolean;
+  url: string;
+  violations: WcagViolation[];
+  totalViolations: number;
+  byImpact: Record<string, number>;
+  passes: number;
+  incomplete: number;
+  inapplicable: number;
+  score: number;
+  error?: string;
 };
 
 export type StepResult = {
@@ -119,12 +146,88 @@ async function attachError(testInfo: TestInfo, stepIndex: number, err: { message
   }
 }
 
+async function runWcagScan(page: Page): Promise<WcagSummary> {
+  const axeCore = await import("axe-core");
+  const axeSource =
+    (axeCore as unknown as { source?: string; default?: { source?: string } }).source ??
+    (axeCore as unknown as { default?: { source?: string } }).default?.source;
+  if (!axeSource) {
+    throw new Error("Axe source indisponible (import axe-core).");
+  }
+  const tags = (process.env.PRIVATEQA_WCAG_TAGS ?? "wcag2a,wcag2aa,wcag21aa,best-practice")
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  const alreadyInjected = await page.evaluate(
+    () => typeof (window as unknown as Record<string, unknown>).axe !== "undefined",
+  );
+  if (!alreadyInjected) {
+    await page.addScriptTag({ content: axeSource });
+  }
+
+  const rawResult = await page.evaluate(
+    ({ runTags }) => {
+      const axe = (window as unknown as Record<string, { run: Function }>).axe;
+      return axe.run(document, { runOnly: { type: "tag", values: runTags } });
+    },
+    { runTags: tags },
+  ) as {
+    violations: Array<{
+      id: string;
+      impact: string;
+      description: string;
+      help: string;
+      helpUrl: string;
+      nodes: unknown[];
+      tags: string[];
+    }>;
+    passes: unknown[];
+    incomplete: unknown[];
+    inapplicable: unknown[];
+  };
+
+  const violations: WcagViolation[] = rawResult.violations.map((v) => ({
+    id: v.id,
+    impact: v.impact ?? "minor",
+    description: v.description,
+    help: v.help,
+    helpUrl: v.helpUrl,
+    nodes: v.nodes.length,
+    wcagTags: v.tags.filter((t) => t.startsWith("wcag") || t === "best-practice"),
+  }));
+
+  const byImpact = violations.reduce<Record<string, number>>((acc, v) => {
+    acc[v.impact] = (acc[v.impact] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const weightedPenalty = violations.reduce((acc, v) => {
+    const w = v.impact === "critical" ? 4 : v.impact === "serious" ? 3 : v.impact === "moderate" ? 2 : 1;
+    return acc + w * Math.max(1, v.nodes);
+  }, 0);
+  const score = Math.max(0, Math.round((100 - weightedPenalty) * 10) / 10);
+
+  return {
+    enabled: true,
+    url: page.url(),
+    violations,
+    totalViolations: violations.length,
+    byImpact,
+    passes: rawResult.passes.length,
+    incomplete: rawResult.incomplete.length,
+    inapplicable: rawResult.inapplicable.length,
+    score,
+  };
+}
+
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
 export const test = base.extend<{ _qaLogs: RuntimeLogs }>({
   page: async ({ browser }, use) => {
+    const wcagMode = isWcagEnabled();
     if (!KEEP_TAB_BETWEEN_TESTS) {
-      const context = await browser.newContext();
+      const context = await browser.newContext({ bypassCSP: wcagMode });
       const page = await context.newPage();
       try {
         await use(page);
@@ -134,7 +237,7 @@ export const test = base.extend<{ _qaLogs: RuntimeLogs }>({
       return;
     }
 
-    if (!sharedContext) sharedContext = await browser.newContext();
+    if (!sharedContext) sharedContext = await browser.newContext({ bypassCSP: wcagMode });
     if (!sharedPage || sharedPage.isClosed()) sharedPage = await sharedContext.newPage();
     await use(sharedPage);
   },
@@ -197,6 +300,7 @@ test.afterEach(async ({ page, _qaLogs }, testInfo) => {
   await Promise.all([ensureDir(ssDir), ensureDir(logsDir)]);
 
   let screenshot: string | undefined;
+  let wcag: WcagSummary | undefined;
   try {
     screenshot = screenshotPath(testInfo, kind);
     await page.screenshot({ path: screenshot, fullPage: true });
@@ -208,6 +312,38 @@ test.afterEach(async ({ page, _qaLogs }, testInfo) => {
   const err = testInfo.error
     ? { message: testInfo.error.message, stack: testInfo.error.stack }
     : undefined;
+
+  if (isWcagEnabled()) {
+    try {
+      wcag = await runWcagScan(page);
+      await testInfo.attach("qa-wcag", {
+        body: Buffer.from(JSON.stringify(wcag)),
+        contentType: "application/json",
+      });
+    } catch (scanError) {
+      const msg = scanError instanceof Error ? scanError.message : String(scanError);
+      wcag = {
+        enabled: true,
+        url: page.url(),
+        violations: [],
+        totalViolations: 0,
+        byImpact: {},
+        passes: 0,
+        incomplete: 0,
+        inapplicable: 0,
+        score: 0,
+        error: msg,
+      };
+      await testInfo.attach("qa-wcag", {
+        body: Buffer.from(JSON.stringify(wcag)),
+        contentType: "application/json",
+      });
+      await testInfo.attach("qa-wcag-error", {
+        body: Buffer.from(`WCAG scan failed: ${msg}`),
+        contentType: "text/plain",
+      });
+    }
+  }
 
   const stepsTotal = steps.length;
   const stepsPassed = steps.filter((s) => s.status === "passed").length;
@@ -236,6 +372,7 @@ test.afterEach(async ({ page, _qaLogs }, testInfo) => {
       path: a.path,
     })),
     endedAt: new Date().toISOString(),
+    wcag,
   };
 
   await testInfo.attach("qa-steps", {

@@ -5,6 +5,7 @@
  */
 import "dotenv/config";
 import { appendFile, mkdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { registerPlugin as registerLocalPlugin } from "../../src/base.js";
 
@@ -30,8 +31,21 @@ function isTruthy(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }
 
+const enterpriseDistPath = path.resolve(process.cwd(), "enterprise", "dist", "index.js");
+const licenseCandidates = [
+  process.env.PRIVATEQA_LICENSE_PATH ?? "",
+  ".privateqa/license.key",
+  "license.key",
+  "enterprise/license.key",
+]
+  .map((p) => p.trim())
+  .filter((p) => p.length > 0)
+  .map((p) => path.resolve(process.cwd(), p));
+const hasEnterpriseDist = existsSync(enterpriseDistPath);
+const hasAnyLicense = licenseCandidates.some((p) => existsSync(p));
+const enterpriseAutoEnabled = hasEnterpriseDist && hasAnyLicense;
 const enterpriseEnabled =
-  isTruthy(process.env.PRIVATEQA_ENTERPRISE) || isTruthy(process.env.ENTREPRISE);
+  isTruthy(process.env.PRIVATEQA_ENTERPRISE) || isTruthy(process.env.ENTREPRISE) || enterpriseAutoEnabled;
 const enterpriseDebug = isTruthy(process.env.PRIVATEQA_DEBUG_HEAL);
 const enterpriseRequireLicense = isTruthy(process.env.PRIVATEQA_ENTERPRISE_REQUIRE_LICENSE);
 const OUTPUT_ROOT = process.env.TEST_OUTPUT_DIR ?? "test-output";
@@ -86,14 +100,31 @@ if (enterpriseEnabled) {
           raw?: string;
         }>;
       };
-      const originalHeal = llmProto.heal.bind(llmProto);
+      const originalHeal = llmProto.heal;
       llmProto.heal = async function patchedHeal(request: unknown) {
         const req = request as { stepLabel?: string; failedSelector?: string; pageUrl?: string };
+        const connectorState = this as unknown as {
+          baseUrl?: unknown;
+          timeout?: unknown;
+          retries?: unknown;
+        };
+        const connectorBaseUrl =
+          typeof connectorState.baseUrl === "string"
+            ? (connectorState.baseUrl ?? "(unknown)")
+            : "(unknown)";
+        const connectorTimeout =
+          typeof connectorState.timeout === "number"
+            ? String(connectorState.timeout)
+            : "(unknown)";
+        const connectorRetries =
+          typeof connectorState.retries === "number"
+            ? String(connectorState.retries)
+            : "(unknown)";
         await appendDevDebug(
-          `llm-heal request step="${req.stepLabel ?? "(unknown)"}" failedSelector="${req.failedSelector ?? "(unknown)"}" page="${req.pageUrl ?? "(unknown)"}"`,
+          `llm-heal request step="${req.stepLabel ?? "(unknown)"}" failedSelector="${req.failedSelector ?? "(unknown)"}" page="${req.pageUrl ?? "(unknown)"}" baseUrl="${connectorBaseUrl}" timeoutMs=${connectorTimeout} retries=${connectorRetries}`,
         );
         try {
-          const response = await originalHeal(request);
+          const response = await originalHeal.call(this, request);
           const suggestionsCount = Array.isArray(response?.suggestions) ? response.suggestions.length : 0;
           const rawPreview =
             typeof response?.raw === "string"
@@ -106,7 +137,11 @@ if (enterpriseEnabled) {
           return response;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          await appendDevDebug(`llm-heal exception message="${message}"`);
+          const stack =
+            error instanceof Error && typeof error.stack === "string"
+              ? error.stack.replace(ANSI_ESCAPE_REGEX, "").replace(/\s+/g, " ").slice(0, 1200)
+              : "(no-stack)";
+          await appendDevDebug(`llm-heal exception message="${message}" stack="${stack}"`);
           throw error;
         }
       };

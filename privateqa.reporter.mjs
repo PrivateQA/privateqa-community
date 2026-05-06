@@ -59,6 +59,10 @@ function pickAttachment(attachments, name) {
   return attachments?.find((x) => x.name === name && x.path)?.path;
 }
 
+function pickAttachmentBody(attachments, name) {
+  return attachments?.find((x) => x.name === name && x.body)?.body;
+}
+
 /**
  * Extrait les résultats par step depuis l'attachement JSON "qa-steps"
  * que base.ts attache à chaque test.
@@ -73,6 +77,17 @@ function extractStepsFromAttachments(attachments) {
     return JSON.parse(raw);
   } catch {
     return [];
+  }
+}
+
+function extractWcagFromAttachments(attachments) {
+  const body = pickAttachmentBody(attachments, "qa-wcag");
+  if (!body) return undefined;
+  try {
+    const raw = typeof body === "string" ? body : body.toString("utf8");
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
   }
 }
 
@@ -107,6 +122,7 @@ export default class PrivateQAReporter {
 
     // Extraire les résultats par step
     const steps = extractStepsFromAttachments(result.attachments);
+    const wcag = extractWcagFromAttachments(result.attachments);
     const stepsTotal = steps.length;
     const stepsPassed = steps.filter((s) => s.status === "passed").length;
     const stepsFailed = steps.filter((s) => s.status === "failed").length;
@@ -154,6 +170,7 @@ export default class PrivateQAReporter {
       },
       stepScreenshots,
       endedAt: new Date().toISOString(),
+      wcag,
     };
 
     this.results.push(record);
@@ -181,6 +198,21 @@ export default class PrivateQAReporter {
       (acc, r) => acc + (r.steps?.failed ?? 0),
       0,
     );
+    const wcagResults = this.results.map((r) => r.wcag).filter(Boolean);
+    const wcagTotals = wcagResults.reduce(
+      (acc, w) => {
+        acc.scans += 1;
+        acc.violations += Number(w.totalViolations ?? 0);
+        acc.passes += Number(w.passes ?? 0);
+        acc.scoreSum += Number(w.score ?? 0);
+        const impacts = w.byImpact ?? {};
+        for (const [k, v] of Object.entries(impacts)) {
+          acc.byImpact[k] = (acc.byImpact[k] ?? 0) + Number(v ?? 0);
+        }
+        return acc;
+      },
+      { scans: 0, violations: 0, passes: 0, scoreSum: 0, byImpact: {} },
+    );
 
     const summary = {
       totals: {
@@ -193,6 +225,17 @@ export default class PrivateQAReporter {
         stepsPassed: totalStepsPassed,
         stepsFailed: totalStepsFailed,
       },
+      wcag:
+        wcagTotals.scans > 0
+          ? {
+              enabled: true,
+              scans: wcagTotals.scans,
+              violations: wcagTotals.violations,
+              passes: wcagTotals.passes,
+              averageScore: Math.round((wcagTotals.scoreSum / wcagTotals.scans) * 10) / 10,
+              byImpact: wcagTotals.byImpact,
+            }
+          : undefined,
       results: this.results,
       version: process.env.TEST_VERSION || undefined,
       generatedAt: new Date().toISOString(),

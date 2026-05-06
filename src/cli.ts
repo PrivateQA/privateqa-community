@@ -86,6 +86,32 @@ function sanitizeRunTargets(targets: string[]) {
   return targets.filter((t) => t.trim() !== "*");
 }
 
+function normalizeGeneratedTarget(target: string): string {
+  const raw = target.trim();
+  if (!raw) return raw;
+
+  const abs = resolve(raw);
+  const generatedRootAbs = resolve(defaultConfig.generatedTestsDir);
+
+  // Si la cible existe réellement, on la convertit en chemin relatif à testDir
+  // (tests/generated) pour éviter les "No tests found" avec chemins Windows.
+  if (existsSync(abs)) {
+    const relToGenerated = relative(generatedRootAbs, abs).replace(/\\/g, "/");
+    if (relToGenerated && !relToGenerated.startsWith("..")) {
+      return relToGenerated;
+    }
+    return abs.replace(/\\/g, "/");
+  }
+
+  // Si l'utilisateur passe déjà tests/generated/... on retire ce préfixe,
+  // car testDir pointe déjà sur ce dossier.
+  const normalized = raw.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (normalized.startsWith("tests/generated/")) {
+    return normalized.slice("tests/generated/".length);
+  }
+  return normalized;
+}
+
 async function openFile(filePath: string) {
   const abs = resolve(filePath);
   const fileUrl = pathToFileURL(abs).href;
@@ -156,9 +182,10 @@ function help() {
 privateqa — Natural-language scenario → Playwright tests
 
 Usage:
-  privateqa run <scenario.md> [--url <url>] [--headed] [--no-map] [--no-embeddings] [--save] [--reporter] [--no-open] [--no-validate]
+  privateqa run <scenario.md> [--url <url>] [--headed] [--no-map] [--no-embeddings] [--save] [--wcag] [--reporter] [--no-open] [--no-validate]
   privateqa run [--headed|--headless] [args...]
-  privateqa run-generated [tests/generated[/...]] [--headed|--headless] [--reporter] [--no-open]
+  privateqa run-generated [tests/generated[/...]] [--headed|--headless] [--wcag] [--reporter] [--no-open]
+  privateqa test [tests/generated[/...]] [--headed|--headless] [--wcag] [--reporter] [--no-open]
 
 All-in-one (recommended):
   npx privateqa run scenario.md                 Map + compile + execute in one go
@@ -168,6 +195,7 @@ All-in-one (recommended):
   npx privateqa run scenario.md --map-headed    Show browser only during mapping
   npx privateqa run scenario.md --glossary .privateqa/glossary.json   Apply business glossary
   npx privateqa run scenario.md --save          Save this run in the evolution history
+  npx privateqa run scenario.md --wcag          Run WCAG accessibility audit (community)
   npx privateqa run scenario.md --reporter      Open report in Chromium at the end
   npx privateqa run scenario.md --no-open       Don't auto-open report in browser
   npx privateqa run scenario.md --no-validate   Skip scenario validation before compile
@@ -176,7 +204,8 @@ Step-by-step:
   privateqa map <url> [--out .privateqa/map.json] [--no-embeddings] [--max 200] [--headed]
   privateqa compile <scenario.md> [--map .privateqa/map.json] [--out <file.spec.ts|dir>] [--base-import <path>] [--glossary <path>]
   privateqa run [--headed|--headless]
-  privateqa run-generated                     Exécute uniquement tests/generated avec le reporter privateqa
+  privateqa run-generated                     Exécute uniquement tests/generated avec fallback IA + reporter (+ --wcag)
+  privateqa test                              Alias simple de run-generated (recommandé pour exécuter les specs déjà générées)
 
 Other:
   privateqa preprocess <scenario.md> [--out .privateqa/pivot.json] [--ollama ...] [--model mistral] [--no-ai] [--glossary <path>]
@@ -446,6 +475,7 @@ async function main() {
     const headless = boolFlag(runArgs, "headless", false);
 
     const save = boolFlag(runArgs, "save", false);
+    const wcag = boolFlag(runArgs, "wcag", false);
 
     const env = { ...process.env };
     // Par défaut, forcer headless si aucun flag n'est donné.
@@ -453,6 +483,7 @@ async function main() {
     if (headed) env.HEADLESS = "false";
     if (headless) env.HEADLESS = "true";
     if (save) env.PRIVATEQA_SAVE_HISTORY = "1";
+    if (wcag) env.PRIVATEQA_WCAG = "1";
 
     const firstArg = runArgs._[0];
     const isScenario = firstArg && /\.md$/i.test(firstArg) && existsSync(resolve(firstArg));
@@ -644,23 +675,25 @@ async function main() {
     return;
   }
 
-  if (cmd === "run-generated") {
+  if (cmd === "run-generated" || cmd === "test") {
     const runArgs = parseArgs(process.argv.slice(3));
     const headed = boolFlag(runArgs, "headed", false);
     const headless = boolFlag(runArgs, "headless", false);
     const noOpen = boolFlag(runArgs, "no-open", false);
     const openReporter = boolFlag(runArgs, "reporter", true);
+    const wcag = boolFlag(runArgs, "wcag", false);
 
     const env = { ...process.env };
     env.HEADLESS = "true";
     if (headed) env.HEADLESS = "false";
     if (headless) env.HEADLESS = "true";
+    if (wcag) env.PRIVATEQA_WCAG = "1";
 
     ensureBrowser(logger);
 
     // Par défaut, cible le dossier généré; sinon accepte un fichier/dossier passé en argument.
     const targetsRaw = runArgs._.length > 0 ? runArgs._ : [defaultConfig.generatedTestsDir];
-    const targets = sanitizeRunTargets(targetsRaw);
+    const targets = sanitizeRunTargets(targetsRaw).map(normalizeGeneratedTarget);
     if (targets.length === 0) {
       throw new Error(
         "Aucune cible de test valide après filtrage des wildcards. Retirez l'argument `*`.",

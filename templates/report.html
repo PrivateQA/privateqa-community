@@ -351,6 +351,13 @@
             </div>
             <div style="padding: 4px 0;"><canvas id="durationChart"></canvas></div>
           </div>
+          <div class="panel" id="wcag-panel" style="display:none;">
+            <div class="panel-title">
+              <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.514a1 1 0 10-1.714-1.03L9.7 11.456 8.4 10.156a1 1 0 10-1.4 1.428l2.1 2.06a1 1 0 001.55-.198l3.207-4.96z" clip-rule="evenodd"/></svg>
+              Audit WCAG
+            </div>
+            <div id="wcag-content" style="font-size:13px; color:#475569;"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -473,6 +480,7 @@ function render(data) {
   var results = data.results;
   var generatedAt = data.generatedAt;
   var version = data.version || null;
+  var wcag = data.wcag || null;
 
   document.getElementById('loading').style.display = 'none';
   document.getElementById('report').style.display = 'block';
@@ -530,6 +538,20 @@ function render(data) {
       '<div class="card-sub">Moyenne : ' + formatDuration(avgDuration) + ' / test</div>' +
       '<div class="card-icon amber"><svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"/></svg></div>' +
     '</div>';
+
+  if (wcag && wcag.enabled) {
+    var impacts = wcag.byImpact || {};
+    var wcagPanel = document.getElementById('wcag-panel');
+    var wcagContent = document.getElementById('wcag-content');
+    wcagPanel.style.display = 'block';
+    wcagContent.innerHTML =
+      '<p><strong>Score moyen :</strong> ' + wcag.averageScore + '/100</p>' +
+      '<p><strong>Scans :</strong> ' + wcag.scans + '</p>' +
+      '<p><strong>Violations :</strong> ' + wcag.violations + '</p>' +
+      '<p><strong>Critical :</strong> ' + (impacts.critical || 0) + ' &nbsp; <strong>Serious :</strong> ' + (impacts.serious || 0) + '</p>' +
+      '<p><strong>Moderate :</strong> ' + (impacts.moderate || 0) + ' &nbsp; <strong>Minor :</strong> ' + (impacts.minor || 0) + '</p>' +
+      '<p style="margin-top:8px;color:#64748b">Points a traiter en priorite : critical > serious.</p>';
+  }
 
   // ── Test results ──
   var col = document.getElementById('results-column');

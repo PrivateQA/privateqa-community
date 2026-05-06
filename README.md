@@ -57,6 +57,7 @@ npx privateqa run scenario.md --no-map        # reuse existing DOM map
 npx privateqa run scenario.md --map-headed    # show browser during mapping only
 npx privateqa run scenario.md --glossary .privateqa/glossary.json  # apply business glossary
 npx privateqa run scenario.md --save          # save run in evolution history
+npx privateqa run scenario.md --wcag          # include WCAG accessibility audit
 npx privateqa run scenario.md --reporter      # open report in Chromium at the end
 npx privateqa run scenario.md --no-open       # don't auto-open report
 npx privateqa run scenario.md --no-validate   # skip pre-run scenario validation
@@ -180,6 +181,7 @@ For more control, you can run each stage separately:
 npx privateqa map https://your-app.com          # 1. Map the DOM
 npx privateqa compile scenario.md --glossary .privateqa/glossary.json  # 2. Generate .spec.ts
 npx privateqa run                                # 3. Run all generated tests
+npx privateqa test                               # 4. Re-run generated specs only (no map/compile)
 ```
 
 ## CLI reference
@@ -189,11 +191,14 @@ npx privateqa run                                # 3. Run all generated tests
 | `privateqa run <scenario.md>` | **All-in-one**: map + compile + execute + report |
 | `privateqa validate <scenario.md>` | Validate parsed steps and fail on unknown lines |
 | `privateqa run` | Execute already-generated tests |
+| `privateqa test` | Execute already-generated tests with privateqa reporter |
 | `privateqa map <url>` | Crawl a URL and build a DOM map |
 | `privateqa compile <scenario.md>` | Generate Playwright spec(s) from a scenario |
 | `privateqa report` | Generate an HTML report from the last run |
 | `privateqa evolution` | Generate an evolution chart across runs |
 | `privateqa api` | Start the REST API server |
+
+With `--wcag`, `run` / `test` include a WCAG accessibility scan (axe-core) and add a synthetic accessibility section in the report.
 
 ## Plugin system
 
